@@ -209,18 +209,17 @@ pub fn list_dir(
       guard i + total <= dir.length() else {
         raise TruncatedSet(i)
       }
-      // SetChecksum: rotate-right sum over the whole set, excluding the
-      // 2-byte SetChecksum field itself; stored as the low 16 bits.
-      let mut sum : UInt = 0U
+      // SetChecksum (§7.4.1.2): 16-bit rotate-right-1 accumulate over
+      // the whole set, excluding the 2-byte SetChecksum field itself.
+      let mut sum = 0
       for k in 0..<total {
         if k == 2 || k == 3 {
           continue
         }
-        let carry = if (sum & 1U) == 1U { 0x80000000U } else { 0U }
-        sum = carry + (sum >> 1) + dir.at(i + k).to_uint()
+        sum = (((sum & 1) << 15) + (sum >> 1) + dir.at(i + k).to_int()) & 0xFFFF
       }
       let expected = @util.le_u16(dir, i + 2)
-      let actual = (sum & 0xFFFFU).reinterpret_as_int()
+      let actual = sum
       guard actual == expected else {
         raise SetChecksumMismatch(expected, actual)
       }

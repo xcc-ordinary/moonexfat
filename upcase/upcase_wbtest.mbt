@@ -73,20 +73,98 @@ test "ASCII mapping rule is enforced" {
 }
 
 ///|
-test "mapping to 0xFFFF is rejected" {
+test "trailing 0xFFFF without a count is rejected" {
   let base = ascii_table()
   let extended = Bytes::makei(258, fn(i) {
     if i < 256 { base.at(i) } else { b'\xFF' }
   })
   let sum = @util.rot_checksum(extended, 0, extended.length())
-  assert_eq(parse_result(extended, sum), Err(InvalidMapping(128)))
+  assert_eq(parse_result(extended, sum), Err(TruncatedCompression(128)))
+}
+
+///|
+test "compressed identity runs are expanded" {
+  // 128 ASCII entries, then 0xFFFF + count 100: code points 128..227
+  // map to themselves.
+  let base = ascii_table()
+  let compressed = Bytes::makei(260, fn(i) {
+    if i < 256 {
+      base.at(i)
+    } else {
+      match i {
+        256 => b'\xFF'
+        257 => b'\xFF'
+        258 => b'\x64' // count = 100
+        _ => b'\x00'
+      }
+    }
+  })
+  let sum = @util.rot_checksum(compressed, 0, compressed.length())
+  let t = UpcaseTable::parse(compressed, sum) catch {
+    e => {
+      println(e.message())
+      assert_true(false)
+      return
+    }
+  }
+  assert_eq(t.length(), 228)
+  assert_eq(t.upcase_char('a'), 'A')
+  assert_eq(t.upcase_char((200).unsafe_to_char()), (200).unsafe_to_char())
+}
+
+///|
+test "full-range table ending in literal 0xFFFF is accepted" {
+  // 128 ASCII entries + identity run of 65407 + literal mapping for
+  // code point 0xFFFF: expands to the full 65536-entry range.
+  let base = ascii_table()
+  let full = Bytes::makei(262, fn(i) {
+    if i < 256 {
+      base.at(i)
+    } else {
+      match i {
+        256 => b'\xFF'
+        257 => b'\xFF'
+        258 => b'\x7F' // count = 65407 = 0xFF7F
+        259 => b'\xFF'
+        260 => b'\xFF' // literal mapping for 0xFFFF
+        _ => b'\xFF'
+      }
+    }
+  })
+  let sum = @util.rot_checksum(full, 0, full.length())
+  let t = UpcaseTable::parse(full, sum) catch {
+    e => {
+      println(e.message())
+      assert_true(false)
+      return
+    }
+  }
+  assert_eq(t.length(), 65536)
+  assert_eq(t.upcase_char('a'), 'A')
+  assert_eq(t.upcase_char((0xFFFF).unsafe_to_char()), (0xFFFF).unsafe_to_char())
+}
+
+///|
+test "zero compression count is rejected" {
+  let base = ascii_table()
+  let bad = Bytes::makei(260, fn(i) {
+    if i < 256 {
+      base.at(i)
+    } else if i == 256 || i == 257 {
+      b'\xFF'
+    } else {
+      b'\x00'
+    }
+  })
+  let sum = @util.rot_checksum(bad, 0, bad.length())
+  assert_eq(parse_result(bad, sum), Err(InvalidCompression(0)))
 }
 
 ///|
 test "short and odd-length tables are rejected" {
   assert_eq(
     parse_result(Bytes::make(100, b'\x00'), 0U),
-    Err(TableTooShort(100)),
+    Err(TableTooShort(50)),
   )
   assert_eq(
     parse_result(Bytes::make(257, b'\x00'), 0U),

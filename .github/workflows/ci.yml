@@ -43,3 +43,21 @@ jobs:
           moon run cmd/moonexfat --target wasm -- cat testdata/mini.exfat SUB/NESTED.TXT
           moon run cmd/moonexfat --target wasm -- extract testdata/mini.exfat DATA.BIN /tmp/data.bin
           test "$(stat -c%s /tmp/data.bin)" = "1200"
+
+  cross-validate:
+    name: Real-image cross-validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Install MoonBit
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Update registry
+        run: moon update
+
+      - name: Cross-validate against real mkfs.exfat image (18 files)
+        run: bash scripts/cross-validate.sh

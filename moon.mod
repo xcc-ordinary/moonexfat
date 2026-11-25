@@ -1,6 +1,6 @@
 name = "xcc-ordinary/moonexfat"
 
-version = "0.3.0"
+version = "0.4.0"
 
 repository = "https://github.com/xcc-ordinary/moonexfat"
 

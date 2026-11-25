@@ -1,6 +1,5 @@
 import {
   "moonbitlang/core/builtin",
-  "moonbitlang/core/encoding/utf8",
   "xcc-ordinary/moonexfat/util",
   "xcc-ordinary/moonexfat/boot",
   "xcc-ordinary/moonexfat/fat",
@@ -8,3 +7,7 @@ import {
   "xcc-ordinary/moonexfat/upcase",
   "xcc-ordinary/moonexfat/entries",
 }
+
+import {
+  "moonbitlang/core/bench",
+} for "wbtest"

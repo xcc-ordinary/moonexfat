@@ -14,7 +14,8 @@ pub suberror UpcaseError {
   TableTooShort(Int32)
   OddLength(Int32)
   NotIdentity(Int32)
-  InvalidMapping(Int32)
+  TruncatedCompression(Int32)
+  InvalidCompression(Int32)
 }
 pub fn UpcaseError::message(Self) -> String
 

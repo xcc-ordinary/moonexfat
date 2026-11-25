@@ -3,16 +3,56 @@ package "xcc-ordinary/moonexfat/entries"
 
 import {
   "moonbitlang/core/debug",
+  "xcc-ordinary/moonexfat/upcase",
 }
 
 // Values
+pub fn decode_timestamp(UInt32) -> DateTime
+
 pub fn find_special(Bytes, Int32) -> SpecialEntry?
+
+pub fn list_dir(Bytes, @upcase.UpcaseTable?) -> Array[FileEntry] raise EntriesError
+
+pub fn name_hash(String, @upcase.UpcaseTable) -> Int32
 
 pub fn volume_label(Bytes) -> String?
 
 // Errors
+#derive(Eq, @debug.Debug)
+pub suberror EntriesError {
+  TruncatedSet(Int32)
+  BadSecondaryCount(Int32)
+  SetChecksumMismatch(Int32, Int32)
+  MissingStream(Int32)
+  BadFileNameEntry(Int32)
+  NameLengthInvalid(Int32)
+  NameHashMismatch(Int32, Int32)
+}
+pub fn EntriesError::message(Self) -> String
 
 // Types and methods
+#derive(Eq, @debug.Debug)
+pub struct DateTime {
+  year : Int32
+  month : Int32
+  day : Int32
+  hour : Int32
+  minute : Int32
+  second : Int32
+}
+
+#derive(Eq, @debug.Debug)
+pub struct FileEntry {
+  name : String
+  attributes : Int32
+  first_cluster : UInt32
+  data_length : Int64
+  valid_data_length : Int64
+  no_fat_chain : Bool
+  modified : DateTime
+}
+pub fn FileEntry::is_dir(Self) -> Bool
+
 #derive(Eq, @debug.Debug)
 pub struct SpecialEntry {
   entry_type : Int32

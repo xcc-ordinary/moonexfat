@@ -5,6 +5,7 @@ import {
   "moonbitlang/core/debug",
   "xcc-ordinary/moonexfat/bitmap",
   "xcc-ordinary/moonexfat/boot",
+  "xcc-ordinary/moonexfat/entries",
   "xcc-ordinary/moonexfat/fat",
   "xcc-ordinary/moonexfat/upcase",
 }
@@ -22,6 +23,9 @@ pub suberror VolumeError {
   BitmapFailed(String)
   UpcaseFailed(String)
   DataLengthInvalid(Int64)
+  DirFailed(String)
+  PathNotFound(String)
+  NotADirectory(String)
 }
 pub fn VolumeError::message(Self) -> String
 
@@ -37,7 +41,11 @@ pub struct Volume {
   label : String?
 }
 pub fn Volume::cluster_chain(Self, UInt32) -> Array[UInt32] raise VolumeError
+pub fn Volume::list_dir_entry(Self, @entries.FileEntry) -> Array[@entries.FileEntry] raise VolumeError
+pub fn Volume::list_root(Self) -> Array[@entries.FileEntry] raise VolumeError
 pub fn Volume::open(Bytes) -> Self raise VolumeError
+pub fn Volume::read_file(Self, @entries.FileEntry) -> Bytes raise VolumeError
+pub fn Volume::resolve(Self, String) -> @entries.FileEntry raise VolumeError
 
 // Type aliases
 

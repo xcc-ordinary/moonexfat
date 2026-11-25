@@ -9,7 +9,7 @@ The MoonBit ecosystem already has FAT12/16/32 ([moonfat][moonfat]),
 NTFS + ext4 ([moonfs][moonfs]) and ISO 9660 ([mooniso][mooniso]) parsers —
 **exFAT was the missing member of the family.** moonexfat fills that gap.
 
-## Status (v0.3.0 — weeks 1–3)
+## Status (v0.4.0 — weeks 1–4, feature-complete)
 
 - ✅ **Main Boot Sector parsing** with spec-level validation: JumpBoot,
   `EXFAT   ` signature, MustBeZero region, sector/cluster shift ranges,
@@ -25,7 +25,8 @@ NTFS + ext4 ([moonfs][moonfs]) and ISO 9660 ([mooniso][mooniso]) parsers —
 - ✅ **Allocation Bitmap** (spec §7.1): bit addressing, allocated count
   with padding-bit masking.
 - ✅ **Up-case Table** (spec §7.2): TableChecksum verification, ASCII
-  mapping rule, 0xFFFF rejection, case mapping for names.
+  mapping rule, **compressed-table expansion** (`0xFFFF` identity runs,
+  literal trailing mapping), case mapping for names.
 - ✅ **Root-directory scanning**: locates the Allocation Bitmap (0x81),
   Up-case Table (0x82) and Volume Label (0x83) entries; skips file entry
   sets via SecondaryCount.
@@ -40,16 +41,23 @@ NTFS + ext4 ([moonfs][moonfs]) and ISO 9660 ([mooniso][mooniso]) parsers —
   and FAT-chain reads otherwise, truncated to DataLength.
 - ✅ Structured, per-constraint errors with readable messages.
 - ✅ `inspect` / `chain` / `ls` / `cat` / `extract` CLI.
-- ✅ 61 tests green on `wasm` and `wasm-gc`; checksum tests assert
+- ✅ **Real-image cross-validation**: 18/18 files extracted from a real
+  `mkfs.exfat` image (Debian forensics-samples) match upstream originals
+  byte-for-byte — see [docs/cross-validation.md](docs/cross-validation.md).
+- ✅ **Fuzzing**: 300 deterministic mutations (byte flips, targeted
+  metadata corruption, truncations), zero panics.
+- ✅ **Benchmarks**: `moon bench` suite (open ≈ 23 µs, list ≈ 3 µs,
+  chained 1200 B read ≈ 7 µs on wasm).
+- ✅ 67 tests green on `wasm` and `wasm-gc`; checksum tests assert
   **independently computed vectors** (`0x829BD81D`, `0x46987370`,
-  `0x88E38EE3`, set checksum `0xEF86`, name hashes `0x3046` / `0x6A4A`),
+  `0x88E38EE3`, set checksum `0x357E`, name hashes `0x3046` / `0x6A4A`),
   not self-consistent ones.
 
 ## Quick start
 
 ```sh
 moon update
-moon test --target wasm          # 61 tests
+moon test --target wasm          # 67 tests
 moon run cmd/moonexfat --target wasm -- inspect testdata/mini.exfat
 moon run cmd/moonexfat --target wasm -- chain testdata/mini.exfat 6
 moon run cmd/moonexfat --target wasm -- ls testdata/mini.exfat
@@ -102,9 +110,17 @@ chain — and a subdirectory containing a nested file).
 | W1 | Boot region: parse + validate + checksum, `inspect` CLI ✅ |
 | W2 | Allocation bitmap, FAT cluster chains, up-case table + checksum, root-directory metadata location ✅ |
 | W3 | Directory entry sets (file / stream-extension / file-name), path resolution, file reading; `ls` / `cat` / `extract` CLI ✅ |
-| W4 | Cross-validation against real `mkfs.exfat` images (byte-for-byte vs Linux mount reads), malformed-image fuzzing, benchmarks, docs |
+| W4 | Cross-validation against a real `mkfs.exfat` image (18/18 files byte-for-byte vs upstream originals), malformed-image fuzzing, benchmarks, docs ✅ |
 
 Read-only parsing only; no formatting, no writing, no block-device access.
+
+## Verification
+
+- `moon test --target wasm` / `--target wasm-gc` — 67 tests incl. fuzzing.
+- `moon bench --target wasm` — micro-benchmarks.
+- `bash scripts/cross-validate.sh` — downloads a public real exFAT image
+  (Debian forensics-samples, MIT) and compares every extracted file with
+  the upstream original by SHA-256; runs in CI on every push.
 
 ## Originality & references
 

@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.0 (2026-11-25)
+
+Week 4 — real-image cross-validation, fuzzing, benchmarks.
+
+- **Cross-validation**: 18/18 files extracted from a real `mkfs.exfat`
+  image (Debian `forensics-samples-exfat`) match upstream originals
+  byte-for-byte (SHA-256), including multi-MB files across hundreds of
+  FAT-chained clusters. Reproducible via `scripts/cross-validate.sh`,
+  also run in CI; full report in `docs/cross-validation.md`.
+- **Fix: up-case table compression (§7.2.5)** — expand `0xFFFF` + count
+  identity runs; a bare trailing `0xFFFF` is the literal mapping of code
+  point 0xFFFF. The real image's recommended compressed table (65536
+  entries) now parses and verifies.
+- **Fix: SetChecksum accumulator width (§7.4.1.2)** — 16-bit rotate-right
+  accumulate, not 32-bit truncated. Corrected independent vector:
+  HELLO.TXT SetChecksum `0x357E` (was `0xEF86` under the wrong width);
+  mini fixture patched accordingly.
+- **Fuzzing**: 300 deterministic mutations (byte flips, targeted metadata
+  flips, truncations) — zero panics, structured errors only.
+- **Benchmarks**: `moon bench` suite for open / list / read / checksum.
+- 67 tests (wasm + wasm-gc), 0 warnings.
+
 ## 0.3.0 (2026-11-25)
 
 Week 3 — directory entry sets, path resolution and file reading.

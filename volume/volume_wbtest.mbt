@@ -2,9 +2,14 @@
 // testdata/mini.exfat byte for byte. Independent vectors (PowerShell):
 //   boot checksum         = 0x46987370
 //   up-case TableChecksum = 0x88E38EE3
-//   HELLO.TXT SetChecksum = 0xEF86
+//   HELLO.TXT SetChecksum = 0x357E (16-bit rotate accumulator)
 //   NameHash("HELLO.TXT") = 0x3046
 //   NameHash("NESTED.TXT")= 0x6A4A
+
+///|
+fn ascii_bytes(s : String) -> Bytes {
+  Bytes::makei(s.length(), fn(i) { s[i].to_int().to_byte() })
+}
 
 ///|
 fn boot_byte(i : Int) -> Byte {
@@ -196,20 +201,19 @@ fn file_set(
       }
     }
   })
-  let mut sum : UInt = 0U
+  let mut sum = 0
   for i in 0..<total {
     if i == 2 || i == 3 {
       continue
     }
-    let carry = if (sum & 1U) == 1U { 0x80000000U } else { 0U }
-    sum = carry + (sum >> 1) + base.at(i).to_uint()
+    sum = (((sum & 1) << 15) + (sum >> 1) + base.at(i).to_int()) & 0xFFFF
   }
-  let cs = sum & 0xFFFFU
+  let cs = sum
   Bytes::makei(total, fn(i) {
     if i == 2 {
-      (cs & 0xFFU).to_byte()
+      (cs & 0xFF).to_byte()
     } else if i == 3 {
-      ((cs >> 8) & 0xFFU).to_byte()
+      ((cs >> 8) & 0xFF).to_byte()
     } else {
       base.at(i)
     }
@@ -256,8 +260,8 @@ fn fat_byte(j : Int) -> Byte {
 fn mini() -> Bytes {
   let root = root_bytes()
   let sub = sub_bytes()
-  let hello = @utf8.encode("Hello, exFAT from MoonBit!\n")
-  let nested = @utf8.encode("nested file works\n")
+  let hello = ascii_bytes("Hello, exFAT from MoonBit!\n")
+  let nested = ascii_bytes("nested file works\n")
   Bytes::makei(262144, fn(i) {
     if i < 6144 {
       boot_byte(i)
@@ -346,8 +350,8 @@ test "mini volume boot checksum matches independent vector" {
 }
 
 ///|
-test "HELLO.TXT set checksum matches independent vector 0xEF86" {
-  assert_eq(@util.le_u16(root_bytes(), 96 + 2), 0xEF86)
+test "HELLO.TXT set checksum matches independent vector 0x357E" {
+  assert_eq(@util.le_u16(root_bytes(), 96 + 2), 0x357E)
 }
 
 ///|
@@ -413,7 +417,7 @@ test "read single-cluster file via NoFatChain" {
       return
     }
   }
-  assert_eq(data, @utf8.encode("Hello, exFAT from MoonBit!\n"))
+  assert_eq(data, ascii_bytes("Hello, exFAT from MoonBit!\n"))
 }
 
 ///|
@@ -454,7 +458,7 @@ test "case-insensitive path resolution into subdirectory" {
       return
     }
   }
-  assert_eq(data, @utf8.encode("nested file works\n"))
+  assert_eq(data, ascii_bytes("nested file works\n"))
 }
 
 ///|

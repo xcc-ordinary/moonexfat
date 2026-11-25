@@ -71,6 +71,12 @@ fn main {
       } else {
         println("tree: need an image file path")
       }
+    "map" =>
+      if args.length() >= 3 {
+        map_cli(args[2], if args.length() >= 4 { args[3] } else { "" })
+      } else {
+        println("map: need an image file path")
+      }
     _ => print_usage()
   }
 }
@@ -101,6 +107,8 @@ fn print_usage() -> Unit {
   println("      Whole-volume consistency: FAT vs bitmap, orphan clusters.")
   println("  moonexfat tree IMAGE")
   println("      Recursively list the whole directory tree.")
+  println("  moonexfat map IMAGE [PATH]")
+  println("      Cluster-run layout: per-file extents and fragmentation.")
 }
 
 ///|
@@ -345,6 +353,66 @@ async fn extract_cli(path : String, file_path : String, out : String) -> Unit {
     }
   }
   println("extracted \{data.length()} bytes to \{out}")
+}
+
+///|
+fn show_runs(runs : Array[(UInt, Int)]) -> String {
+  let parts : Array[String] = []
+  for (start, len) in runs {
+    if len == 1 {
+      parts.push("\{start}")
+    } else {
+      parts.push("\{start}..\{start.to_int() + len - 1}")
+    }
+  }
+  parts.join(", ")
+}
+
+///|
+async fn map_cli(path : String, file_path : String) -> Unit {
+  let vol = match open_volume(path) {
+    Some(v) => v
+    None => return
+  }
+  if file_path != "" {
+    let entry = vol.resolve(file_path) catch {
+      e => {
+        println("error: \{e.message()}")
+        return
+      }
+    }
+    let runs = vol.cluster_runs(entry) catch {
+      e => {
+        println("error: \{e.message()}")
+        return
+      }
+    }
+    println("\{entry.name}: \{runs.length()} run(s): \{show_runs(runs)}")
+    return
+  }
+  let entries = vol.tree() catch {
+    e => {
+      println("error: \{e.message()}")
+      return
+    }
+  }
+  let mut fragmented = 0
+  for (p, e) in entries {
+    if e.is_dir() {
+      continue
+    }
+    let runs = vol.cluster_runs(e) catch {
+      _ => {
+        println("\{p}: ERROR")
+        continue
+      }
+    }
+    if runs.length() > 1 {
+      fragmented = fragmented + 1
+    }
+    println("\{p}: \{runs.length()} run(s): \{show_runs(runs)}")
+  }
+  println("\{fragmented} fragmented file(s)")
 }
 
 ///|

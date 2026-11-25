@@ -694,3 +694,37 @@ test "tree walks the whole directory tree" {
   assert_true(paths.contains("SUB"))
   assert_true(paths.contains("SUB/NESTED.TXT"))
 }
+
+///|
+test "cluster runs: contiguous and FAT-chained files" {
+  let vol = opened()
+  let hello = vol.resolve("HELLO.TXT") catch { _ => abort("setup") }
+  let runs = vol.cluster_runs(hello) catch { _ => abort("runs") }
+  assert_eq(runs, [(5U, 1)])
+  let data = vol.resolve("DATA.BIN") catch { _ => abort("setup") }
+  let runs2 = vol.cluster_runs(data) catch { _ => abort("runs") }
+  assert_eq(runs2, [(6U, 3)])
+}
+
+///|
+test "cluster runs detect fragmentation" {
+  // Rewire DATA.BIN's chain to 6 -> 8 -> 7 -> EOC (non-contiguous).
+  let base = mini()
+  let img = Bytes::makei(base.length(), fn(i) {
+    if i == 12288 + 6 * 4 {
+      b'\x08'
+    } else if i >= 12288 + 7 * 4 && i < 12288 + 8 * 4 {
+      b'\xFF'
+    } else if i == 12288 + 8 * 4 {
+      b'\x07'
+    } else if i > 12288 + 8 * 4 && i < 12288 + 9 * 4 {
+      b'\x00'
+    } else {
+      base.at(i)
+    }
+  })
+  let vol = Volume::open(img) catch { _ => abort("open") }
+  let data = vol.resolve("DATA.BIN") catch { _ => abort("setup") }
+  let runs = vol.cluster_runs(data) catch { _ => abort("runs") }
+  assert_eq(runs, [(6U, 1), (8U, 1), (7U, 1)])
+}

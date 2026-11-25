@@ -65,6 +65,12 @@ fn main {
       } else {
         println("verify: need an image file path")
       }
+    "tree" =>
+      if args.length() >= 3 {
+        tree_cli(args[2])
+      } else {
+        println("tree: need an image file path")
+      }
     _ => print_usage()
   }
 }
@@ -93,6 +99,8 @@ fn print_usage() -> Unit {
   println("      Full metadata: attributes, timestamps, UTC offset, clusters.")
   println("  moonexfat verify IMAGE")
   println("      Whole-volume consistency: FAT vs bitmap, orphan clusters.")
+  println("  moonexfat tree IMAGE")
+  println("      Recursively list the whole directory tree.")
 }
 
 ///|
@@ -337,6 +345,55 @@ async fn extract_cli(path : String, file_path : String, out : String) -> Unit {
     }
   }
   println("extracted \{data.length()} bytes to \{out}")
+}
+
+///|
+async fn tree_cli(path : String) -> Unit {
+  let vol = match open_volume(path) {
+    Some(v) => v
+    None => return
+  }
+  let entries = vol.tree() catch {
+    e => {
+      println("error: \{e.message()}")
+      return
+    }
+  }
+  for (p, e) in entries {
+    let mut depth = 0
+    for c in p.iter() {
+      if c == '/' {
+        depth = depth + 1
+      }
+    }
+    let mut indent = ""
+    for _ in 0..<depth {
+      indent = indent + "  "
+    }
+    let mut name = ""
+    let mut last = 0
+    let mut idx = 0
+    for c in p.iter() {
+      if c == '/' {
+        last = idx + 1
+      }
+      idx = idx + 1
+    }
+    idx = 0
+    for c in p.iter() {
+      if idx >= last {
+        name = name + "\{c}"
+      }
+      idx = idx + 1
+    }
+    let suffix = if e.is_dir() {
+      "/"
+    } else {
+      "  (\{e.data_length} B)"
+    }
+    println("\{indent}\{name}\{suffix}")
+  }
+  println("\{entries.length()} entries")
 }
 
 ///|

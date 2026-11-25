@@ -678,3 +678,19 @@ test "verify detects a broken FAT chain" {
   assert_true(r.problems.length() >= 1)
   assert_true(r.orphan_clusters >= 1) // cluster 8 now unreachable
 }
+
+///|
+test "tree walks the whole directory tree" {
+  let t = opened().tree() catch {
+    _ => {
+      assert_true(false)
+      return
+    }
+  }
+  assert_eq(t.length(), 4)
+  let paths = t.map(fn(x) { x.0 })
+  assert_true(paths.contains("HELLO.TXT"))
+  assert_true(paths.contains("DATA.BIN"))
+  assert_true(paths.contains("SUB"))
+  assert_true(paths.contains("SUB/NESTED.TXT"))
+}

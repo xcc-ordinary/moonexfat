@@ -53,6 +53,12 @@ fn main {
       } else {
         println("recover: need IMAGE DELETED_PATH OUTPUT_FILE")
       }
+    "stat" =>
+      if args.length() >= 4 {
+        stat_cli(args[2], args[3])
+      } else {
+        println("stat: need an image file path and a file path inside it")
+      }
     _ => print_usage()
   }
 }
@@ -77,6 +83,8 @@ fn print_usage() -> Unit {
   println("      List deleted entry sets; 'intact' = clusters still free.")
   println("  moonexfat recover IMAGE DELETED_PATH OUTPUT")
   println("      Best-effort recovery of a deleted file's former clusters.")
+  println("  moonexfat stat IMAGE PATH")
+  println("      Full metadata: attributes, timestamps, UTC offset, clusters.")
 }
 
 ///|
@@ -321,6 +329,71 @@ async fn extract_cli(path : String, file_path : String, out : String) -> Unit {
     }
   }
   println("extracted \{data.length()} bytes to \{out}")
+}
+
+///|
+fn fmt_ts(d : @entries.DateTime, ten_ms : Int) -> String {
+  "\{d.year}-\{two(d.month)}-\{two(d.day)} \{two(d.hour)}:\{two(d.minute)}:\{two(d.second)}.\{two(ten_ms)}"
+}
+
+///|
+fn fmt_offset(minutes : Int?) -> String {
+  match minutes {
+    None => "(not recorded)"
+    Some(m) => {
+      let sign = if m < 0 {
+        "-"
+      } else {
+        "+"
+      }
+      let a = if m < 0 {
+        -m
+      } else {
+        m
+      }
+      "UTC\{sign}\{two(a / 60)}:\{two(a % 60)}"
+    }
+  }
+}
+
+///|
+async fn stat_cli(path : String, file_path : String) -> Unit {
+  let vol = match open_volume(path) {
+    Some(v) => v
+    None => return
+  }
+  let entry = vol.resolve(file_path) catch {
+    _ => {
+      let e = vol.resolve_deleted(file_path) catch {
+        e2 => {
+          println("error: \{e2.message()}")
+          return
+        }
+      }
+      e
+    }
+  }
+  let csize = vol.boot.cluster_size()
+  let nclusters = if entry.data_length <= 0L {
+    0
+  } else {
+    ((entry.data_length + csize.to_int64() - 1L) / csize.to_int64()).to_int()
+  }
+  println("name             : \{entry.name}")
+  println("type             : \{if entry.is_dir() { "directory" } else { "file" }}\{if entry.deleted { " (DELETED)" } else { "" }}")
+  println("attributes       : \{@entries.attribute_string(entry.attributes)}")
+  println("data length      : \{entry.data_length} bytes")
+  println("valid data length: \{entry.valid_data_length} bytes")
+  println("first cluster    : \{entry.first_cluster}")
+  println("cluster count    : \{nclusters} (\{csize} B clusters)")
+  println("allocation       : \{if entry.no_fat_chain { "contiguous (NoFatChain)" } else { "FAT chain" }}")
+  println("created          : \{fmt_ts(entry.created, entry.create_10ms)}")
+  println("modified         : \{fmt_ts(entry.modified, entry.modified_10ms)}")
+  println("accessed         : \{fmt_ts(entry.accessed, 0)}")
+  println("utc offset       : \{fmt_offset(entry.utc_offset_minutes)}")
+  if entry.deleted {
+    println("recovery hint    : \{if vol.deleted_intact(entry) { "clusters still free — data likely intact" } else { "clusters reallocated — data may be overwritten" }}")
+  }
 }
 
 ///|

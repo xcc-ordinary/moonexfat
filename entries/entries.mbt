@@ -148,6 +148,53 @@ pub struct FileEntry {
   no_fat_chain : Bool
   modified : DateTime
   deleted : Bool
+  created : DateTime
+  accessed : DateTime
+  create_10ms : Int
+  modified_10ms : Int
+  utc_offset_minutes : Int?
+}
+
+///|
+/// Decode a UTC-offset byte (spec §7.4.9): bit 7 marks validity, the low
+/// 7 bits are a two's-complement count of 15-minute increments.
+pub fn decode_utc_offset(raw : Int) -> Int? {
+  if (raw & 0x80) == 0 {
+    return None
+  }
+  let v = raw & 0x7F
+  let signed = if v >= 64 {
+    v - 128
+  } else {
+    v
+  }
+  Some(signed * 15)
+}
+
+///|
+/// Human-readable attribute flags (spec §7.4.3).
+pub fn attribute_string(attrs : Int) -> String {
+  let parts : Array[String] = []
+  if (attrs & 0x01) != 0 {
+    parts.push("READONLY")
+  }
+  if (attrs & 0x02) != 0 {
+    parts.push("HIDDEN")
+  }
+  if (attrs & 0x04) != 0 {
+    parts.push("SYSTEM")
+  }
+  if (attrs & 0x10) != 0 {
+    parts.push("DIRECTORY")
+  }
+  if (attrs & 0x20) != 0 {
+    parts.push("ARCHIVE")
+  }
+  if parts.length() == 0 {
+    "NONE"
+  } else {
+    parts.join(" ")
+  }
 }
 
 ///|
@@ -320,6 +367,11 @@ fn scan(
         no_fat_chain: (flags & 2) != 0,
         modified: decode_timestamp(@util.le_u32(dir, i + 12)),
         deleted,
+        created: decode_timestamp(@util.le_u32(dir, i + 8)),
+        accessed: decode_timestamp(@util.le_u32(dir, i + 16)),
+        create_10ms: dir.at(i + 20).to_int(),
+        modified_10ms: dir.at(i + 21).to_int(),
+        utc_offset_minutes: decode_utc_offset(dir.at(i + 23).to_int()),
       })
       i = i + total
     } else if t == (if deleted { 0x85 } else { 0x05 }) {

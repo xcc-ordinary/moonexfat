@@ -586,3 +586,47 @@ test "truncated image is reported" {
     _ => assert_true(false)
   }
 }
+///|
+test "stat timestamps and UTC offset from entry bytes" {
+  // Set LastModifiedUtcOffset (byte 23 of the HELLO.TXT set) to UTC+8,
+  // then recompute the set checksum so the set stays valid.
+  let patched = set_byte(mini(), 14336 + 96 + 23, b'\xA0')
+  let mut sum = 0
+  for k in 0..<96 {
+    if k == 2 || k == 3 {
+      continue
+    }
+    sum = (((sum & 1) << 15) + (sum >> 1) + patched.at(14336 + 96 + k).to_int()) & 0xFFFF
+  }
+  let img = Bytes::makei(patched.length(), fn(i) {
+    if i == 14336 + 96 + 2 {
+      (sum & 0xFF).to_byte()
+    } else if i == 14336 + 96 + 3 {
+      ((sum >> 8) & 0xFF).to_byte()
+    } else {
+      patched.at(i)
+    }
+  })
+  let vol = Volume::open(img) catch {
+    _ => {
+      assert_true(false)
+      return
+    }
+  }
+  let e = vol.resolve("HELLO.TXT") catch {
+    _ => {
+      assert_true(false)
+      return
+    }
+  }
+  assert_eq(e.created.year, 2026)
+  assert_eq(e.accessed.month, 11)
+  assert_eq(e.utc_offset_minutes, Some(480))
+  let plain = opened().resolve("HELLO.TXT") catch {
+    _ => {
+      assert_true(false)
+      return
+    }
+  }
+  assert_eq(plain.utc_offset_minutes, None)
+}

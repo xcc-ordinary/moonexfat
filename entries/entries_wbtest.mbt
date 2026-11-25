@@ -85,3 +85,18 @@ test "volume label decoding" {
   assert_eq(volume_label(label), Some("TEST"))
   assert_eq(volume_label(Bytes::make(64, b'\x00')), None)
 }
+///|
+test "UTC offset decoding" {
+  assert_eq(decode_utc_offset(0x80), Some(0))
+  assert_eq(decode_utc_offset(0x80 | 32), Some(480)) // UTC+8
+  assert_eq(decode_utc_offset(0x80 | 0x7C), Some(-60)) // -4 * 15
+  assert_eq(decode_utc_offset(0x20), None) // validity bit clear
+}
+
+///|
+test "attribute string" {
+  assert_eq(attribute_string(0x20), "ARCHIVE")
+  assert_eq(attribute_string(0x10), "DIRECTORY")
+  assert_eq(attribute_string(0x01 | 0x02 | 0x04), "READONLY HIDDEN SYSTEM")
+  assert_eq(attribute_string(0), "NONE")
+}

@@ -1,0 +1,13 @@
+import {
+  "moonbitlang/core/env",
+  "moonbitlang/core/async/fs",
+  "xcc-ordinary/moonexfat/boot",
+}
+
+pkgtype(kind: "executable")
+
+options(
+  "allow-experimental-packages": true,
+)
+
+supported_targets = "-all+native+wasm"

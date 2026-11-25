@@ -1,0 +1,65 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "xcc-ordinary/moonexfat/boot"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn boot_checksum(Bytes, Int32) -> UInt32 raise BootError
+
+pub fn parse_boot_sector(Bytes) -> BootRegion raise BootError
+
+pub fn verify_boot_region(Bytes) -> BootRegion raise BootError
+
+// Errors
+#derive(Eq, @debug.Debug)
+pub suberror BootError {
+  Truncated(String)
+  BadJumpBoot
+  BadFileSystemName
+  NonZeroMustBeZero(Int32)
+  BadSectorShift(Int32)
+  BadClusterShift(Int32)
+  BadNumberOfFats(Int32)
+  BadPercentInUse(Int32)
+  BadRevision(Int32)
+  BadFatOffset(UInt32)
+  BadFatLength(UInt32)
+  BadClusterHeapOffset(UInt32)
+  BadClusterCount(UInt32)
+  BadRootCluster(UInt32)
+  BadClusterIndex(UInt32)
+  VolumeTooSmall(Int64)
+  BadSignature(Int32)
+  ChecksumMismatch(UInt32, UInt32)
+}
+pub fn BootError::message(Self) -> String
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub struct BootRegion {
+  partition_offset : Int64
+  volume_length : Int64
+  fat_offset : UInt32
+  fat_length : UInt32
+  cluster_heap_offset : UInt32
+  cluster_count : UInt32
+  root_dir_cluster : UInt32
+  volume_serial : UInt32
+  fs_revision : Int32
+  volume_flags : Int32
+  bytes_per_sector_shift : Int32
+  sectors_per_cluster_shift : Int32
+  number_of_fats : Int32
+  drive_select : Int32
+  percent_in_use : Int32
+}
+pub fn BootRegion::cluster_offset(Self, UInt32) -> Int64 raise BootError
+pub fn BootRegion::cluster_size(Self) -> Int32
+pub fn BootRegion::sector_size(Self) -> Int32
+pub fn BootRegion::sectors_per_cluster(Self) -> Int32
+
+// Type aliases
+
+// Traits

@@ -113,29 +113,7 @@ pub fn BootRegion::cluster_offset(
   sectors * self.sector_size().to_int64()
 }
 
-// ---- little-endian readers ----
-
-///|
-fn le_u16(data : Bytes, off : Int) -> Int {
-  data.at(off).to_int() | (data.at(off + 1).to_int() << 8)
-}
-
-///|
-fn le_u32(data : Bytes, off : Int) -> UInt {
-  data.at(off).to_uint() |
-  (data.at(off + 1).to_uint() << 8) |
-  (data.at(off + 2).to_uint() << 16) |
-  (data.at(off + 3).to_uint() << 24)
-}
-
-///|
-fn le_u64(data : Bytes, off : Int) -> Int64 {
-  let mut v : Int64 = 0L
-  for k in 0..<8 {
-    v = v | (data.at(off + k).to_int64() << (8 * k))
-  }
-  v
-}
+// ---- field readers use @util.le_u16 / le_u32 / le_u64 ----
 
 ///|
 /// Parse and validate the Main Boot Sector at the start of `data`.
@@ -186,20 +164,20 @@ pub fn parse_boot_sector(data : Bytes) -> BootRegion raise BootError {
   guard percent <= 100 || percent == 255 else {
     raise BadPercentInUse(percent)
   }
-  let revision = le_u16(data, 104)
+  let revision = @util.le_u16(data, 104)
   guard (revision >> 8) == 1 else {
     raise BadRevision(revision)
   }
-  let fat_offset = le_u32(data, 80)
+  let fat_offset = @util.le_u32(data, 80)
   // FatOffset >= 24: both boot regions (12 sectors each) come first.
   guard fat_offset >= 24U else {
     raise BadFatOffset(fat_offset)
   }
-  let fat_length = le_u32(data, 84)
-  let heap_offset = le_u32(data, 88)
-  let cluster_count = le_u32(data, 92)
-  let root_cluster = le_u32(data, 96)
-  let volume_length = le_u64(data, 72)
+  let fat_length = @util.le_u32(data, 84)
+  let heap_offset = @util.le_u32(data, 88)
+  let cluster_count = @util.le_u32(data, 92)
+  let root_cluster = @util.le_u32(data, 96)
+  let volume_length = @util.le_u64(data, 72)
   guard cluster_count >= 1U && cluster_count <= 0xFFFFFFF5U else {
     raise BadClusterCount(cluster_count)
   }
@@ -223,16 +201,16 @@ pub fn parse_boot_sector(data : Bytes) -> BootRegion raise BootError {
     raise VolumeTooSmall(volume_length)
   }
   {
-    partition_offset: le_u64(data, 64),
+    partition_offset: @util.le_u64(data, 64),
     volume_length,
     fat_offset,
     fat_length,
     cluster_heap_offset: heap_offset,
     cluster_count,
     root_dir_cluster: root_cluster,
-    volume_serial: le_u32(data, 100),
+    volume_serial: @util.le_u32(data, 100),
     fs_revision: revision,
-    volume_flags: le_u16(data, 106),
+    volume_flags: @util.le_u16(data, 106),
     bytes_per_sector_shift: bps_shift,
     sectors_per_cluster_shift: spc_shift,
     number_of_fats: num_fats,

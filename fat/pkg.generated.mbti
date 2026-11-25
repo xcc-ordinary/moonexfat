@@ -1,0 +1,43 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "xcc-ordinary/moonexfat/fat"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+#derive(Eq, @debug.Debug)
+pub suberror FatError {
+  FatTooSmall(Int32, Int64)
+  StartOutOfRange(UInt32)
+  CycleAt(UInt32)
+  BadClusterInChain(UInt32)
+  InvalidEntry(UInt32, UInt32)
+}
+pub fn FatError::message(Self) -> String
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub enum FatEntry {
+  Free
+  Next(UInt32)
+  Bad
+  MediaDescriptor
+  EndOfChain
+  Reserved(UInt32)
+}
+
+#derive(Eq, @debug.Debug)
+pub struct FatView {
+  data : Bytes
+  cluster_count : UInt32
+}
+pub fn FatView::chain(Self, UInt32) -> Array[UInt32] raise FatError
+pub fn FatView::entry(Self, UInt32) -> FatEntry raise FatError
+pub fn FatView::new(Bytes, UInt32) -> Self raise FatError
+
+// Type aliases
+
+// Traits

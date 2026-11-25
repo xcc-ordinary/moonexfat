@@ -1,0 +1,26 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "xcc-ordinary/moonexfat/entries"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn find_special(Bytes, Int32) -> SpecialEntry?
+
+pub fn volume_label(Bytes) -> String?
+
+// Errors
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub struct SpecialEntry {
+  entry_type : Int32
+  first_cluster : UInt32
+  data_length : Int64
+  table_checksum : UInt32
+}
+
+// Type aliases
+
+// Traits

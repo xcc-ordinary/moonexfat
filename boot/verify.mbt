@@ -25,7 +25,7 @@ pub fn verify_boot_region(data : Bytes) -> BootRegion raise BootError {
   let expected = boot_checksum(data, size)
   let base = 11 * size
   for k in 0..<(size / 4) {
-    let actual = le_u32(data, base + 4 * k)
+    let actual = @util.le_u32(data, base + 4 * k)
     guard actual == expected else {
       raise ChecksumMismatch(expected, actual)
     }

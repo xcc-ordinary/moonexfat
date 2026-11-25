@@ -1,0 +1,33 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "xcc-ordinary/moonexfat/upcase"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+#derive(Eq, @debug.Debug)
+pub suberror UpcaseError {
+  ChecksumMismatch(UInt32, UInt32)
+  TableTooShort(Int32)
+  OddLength(Int32)
+  NotIdentity(Int32)
+  InvalidMapping(Int32)
+}
+pub fn UpcaseError::message(Self) -> String
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub struct UpcaseTable {
+  table : Array[Int32]
+}
+pub fn UpcaseTable::length(Self) -> Int32
+pub fn UpcaseTable::parse(Bytes, UInt32) -> Self raise UpcaseError
+pub fn UpcaseTable::upcase_char(Self, Char) -> Char
+pub fn UpcaseTable::upcase_string(Self, String) -> String
+
+// Type aliases
+
+// Traits

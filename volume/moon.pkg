@@ -1,0 +1,9 @@
+import {
+  "moonbitlang/core/builtin",
+  "xcc-ordinary/moonexfat/util",
+  "xcc-ordinary/moonexfat/boot",
+  "xcc-ordinary/moonexfat/fat",
+  "xcc-ordinary/moonexfat/bitmap",
+  "xcc-ordinary/moonexfat/upcase",
+  "xcc-ordinary/moonexfat/entries",
+}

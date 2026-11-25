@@ -1,0 +1,30 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "xcc-ordinary/moonexfat/bitmap"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+#derive(Eq, @debug.Debug)
+pub suberror BitmapError {
+  BitmapTooSmall(Int32, Int32)
+  ClusterOutOfRange(UInt32)
+}
+pub fn BitmapError::message(Self) -> String
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub struct Bitmap {
+  data : Bytes
+  cluster_count : UInt32
+}
+pub fn Bitmap::allocated_count(Self) -> Int32
+pub fn Bitmap::is_allocated(Self, UInt32) -> Bool raise BitmapError
+pub fn Bitmap::new(Bytes, UInt32) -> Self raise BitmapError
+
+// Type aliases
+
+// Traits

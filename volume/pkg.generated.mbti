@@ -1,0 +1,44 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "xcc-ordinary/moonexfat/volume"
+
+import {
+  "moonbitlang/core/debug",
+  "xcc-ordinary/moonexfat/bitmap",
+  "xcc-ordinary/moonexfat/boot",
+  "xcc-ordinary/moonexfat/fat",
+  "xcc-ordinary/moonexfat/upcase",
+}
+
+// Values
+
+// Errors
+#derive(Eq, @debug.Debug)
+pub suberror VolumeError {
+  BootFailed(String)
+  FatFailed(String)
+  ImageTooSmall(String)
+  BitmapMissing
+  UpcaseMissing
+  BitmapFailed(String)
+  UpcaseFailed(String)
+  DataLengthInvalid(Int64)
+}
+pub fn VolumeError::message(Self) -> String
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub struct Volume {
+  boot : @boot.BootRegion
+  image : Bytes
+  fat : @fat.FatView
+  root_dir : Bytes
+  bitmap : @bitmap.Bitmap
+  upcase : @upcase.UpcaseTable
+  label : String?
+}
+pub fn Volume::cluster_chain(Self, UInt32) -> Array[UInt32] raise VolumeError
+pub fn Volume::open(Bytes) -> Self raise VolumeError
+
+// Type aliases
+
+// Traits

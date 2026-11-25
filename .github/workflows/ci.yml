@@ -35,4 +35,7 @@ jobs:
         run: moon test --target wasm-gc
 
       - name: CLI smoke test
-        run: moon run cmd/moonexfat --target wasm -- inspect testdata/synthetic.exfat
+        run: |
+          moon run cmd/moonexfat --target wasm -- inspect testdata/synthetic.exfat
+          moon run cmd/moonexfat --target wasm -- inspect testdata/mini.exfat
+          moon run cmd/moonexfat --target wasm -- chain testdata/mini.exfat 2

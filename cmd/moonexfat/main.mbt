@@ -393,7 +393,7 @@ fn show_runs(runs : Array[(UInt, Int)]) -> String {
     if len == 1 {
       parts.push("\{start}")
     } else {
-      parts.push("\{start}..\{start.to_int() + len - 1}")
+      parts.push("\{start}..\{start.reinterpret_as_int() + len - 1}")
     }
   }
   parts.join(", ")

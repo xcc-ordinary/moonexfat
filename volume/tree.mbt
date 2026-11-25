@@ -1,4 +1,4 @@
-// Recursive directory-tree traversal.
+// Recursive directory-tree traversal and name search.
 
 ///|
 /// Walk the whole live directory tree and return (path, entry) pairs.
@@ -33,4 +33,15 @@ pub fn Volume::tree(self : Volume) -> Array[(String, @entries.FileEntry)] raise 
     }
   }
   out
+}
+///|
+/// Case-insensitive substring search over all entry names in the tree
+/// (comparison uses the volume's up-case table, as exFAT itself does).
+pub fn Volume::find(
+  self : Volume,
+  pattern : String,
+) -> Array[(String, @entries.FileEntry)] raise VolumeError {
+  let needle = self.upcase.upcase_string(pattern)
+  let all = self.tree()
+  all.filter(fn(x) { self.upcase.upcase_string(x.1.name).contains(needle) })
 }

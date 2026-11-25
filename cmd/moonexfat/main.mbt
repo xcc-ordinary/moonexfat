@@ -77,6 +77,12 @@ fn main {
       } else {
         println("map: need an image file path")
       }
+    "find" =>
+      if args.length() >= 4 {
+        find_cli(args[2], args[3])
+      } else {
+        println("find: need an image file path and a name pattern")
+      }
     _ => print_usage()
   }
 }
@@ -109,6 +115,8 @@ fn print_usage() -> Unit {
   println("      Recursively list the whole directory tree.")
   println("  moonexfat map IMAGE [PATH]")
   println("      Cluster-run layout: per-file extents and fragmentation.")
+  println("  moonexfat find IMAGE PATTERN")
+  println("      Case-insensitive name search across the whole tree.")
 }
 
 ///|
@@ -353,6 +361,29 @@ async fn extract_cli(path : String, file_path : String, out : String) -> Unit {
     }
   }
   println("extracted \{data.length()} bytes to \{out}")
+}
+
+///|
+async fn find_cli(path : String, pattern : String) -> Unit {
+  let vol = match open_volume(path) {
+    Some(v) => v
+    None => return
+  }
+  let hits = vol.find(pattern) catch {
+    e => {
+      println("error: \{e.message()}")
+      return
+    }
+  }
+  for (p, e) in hits {
+    let kind = if e.is_dir() {
+      "<DIR>"
+    } else {
+      "\{e.data_length} B"
+    }
+    println("\{p}  (\{kind})")
+  }
+  println("\{hits.length()} match(es)")
 }
 
 ///|

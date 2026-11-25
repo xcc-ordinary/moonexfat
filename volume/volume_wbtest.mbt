@@ -728,3 +728,18 @@ test "cluster runs detect fragmentation" {
   let runs = vol.cluster_runs(data) catch { _ => abort("runs") }
   assert_eq(runs, [(6U, 1), (8U, 1), (7U, 1)])
 }
+
+///|
+test "find is case-insensitive and matches substrings" {
+  let vol = opened()
+  let a = vol.find("nested") catch { _ => abort("find") }
+  assert_eq(a.length(), 1)
+  assert_eq(a[0].0, "SUB/NESTED.TXT")
+  let b = vol.find(".txt") catch { _ => abort("find") }
+  assert_eq(b.length(), 2)
+  let c = vol.find("sub") catch { _ => abort("find") }
+  assert_eq(c.length(), 1)
+  assert_eq(c[0].1.is_dir(), true)
+  let d = vol.find("zzz") catch { _ => abort("find") }
+  assert_eq(d.length(), 0)
+}

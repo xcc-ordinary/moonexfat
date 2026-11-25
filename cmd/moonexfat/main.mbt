@@ -41,6 +41,18 @@ fn main {
       } else {
         println("extract: need IMAGE PATH_IN_IMAGE OUTPUT_FILE")
       }
+    "deleted" =>
+      if args.length() >= 3 {
+        deleted_cli(args[2], if args.length() >= 4 { args[3] } else { "/" })
+      } else {
+        println("deleted: need an image file path")
+      }
+    "recover" =>
+      if args.length() >= 5 {
+        recover_cli(args[2], args[3], args[4])
+      } else {
+        println("recover: need IMAGE DELETED_PATH OUTPUT_FILE")
+      }
     _ => print_usage()
   }
 }
@@ -61,6 +73,10 @@ fn print_usage() -> Unit {
   println("      Print a file's content as UTF-8 text.")
   println("  moonexfat extract IMAGE PATH OUTPUT")
   println("      Extract a file from the image to OUTPUT.")
+  println("  moonexfat deleted IMAGE [DIR]")
+  println("      List deleted entry sets; 'intact' = clusters still free.")
+  println("  moonexfat recover IMAGE DELETED_PATH OUTPUT")
+  println("      Best-effort recovery of a deleted file's former clusters.")
 }
 
 ///|
@@ -305,4 +321,82 @@ async fn extract_cli(path : String, file_path : String, out : String) -> Unit {
     }
   }
   println("extracted \{data.length()} bytes to \{out}")
+}
+
+///|
+async fn deleted_cli(path : String, dir_path : String) -> Unit {
+  let vol = match open_volume(path) {
+    Some(v) => v
+    None => return
+  }
+  let listing = if dir_path == "/" || dir_path == "" {
+    vol.list_deleted_root() catch {
+      e => {
+        println("error: \{e.message()}")
+        return
+      }
+    }
+  } else {
+    let entry = vol.resolve_deleted(dir_path) catch {
+      e => {
+        println("error: \{e.message()}")
+        return
+      }
+    }
+    vol.list_deleted_dir(entry) catch {
+      e => {
+        println("error: \{e.message()}")
+        return
+      }
+    }
+  }
+  println("STATUS   SIZE       NAME")
+  for e in listing {
+    let status = if e.is_dir() {
+      "<DIR> "
+    } else if vol.deleted_intact(e) {
+      "intact"
+    } else {
+      "reused"
+    }
+    println("\{status}  \{e.data_length}  \{e.name}")
+  }
+  println("\{listing.length()} deleted entries")
+}
+
+///|
+async fn recover_cli(path : String, file_path : String, out : String) -> Unit {
+  let vol = match open_volume(path) {
+    Some(v) => v
+    None => return
+  }
+  let entry = vol.resolve_deleted(file_path) catch {
+    e => {
+      println("error: \{e.message()}")
+      return
+    }
+  }
+  guard !entry.is_dir() else {
+    println("error: \{file_path} is a directory")
+    return
+  }
+  let intact = vol.deleted_intact(entry)
+  let data = vol.recover(entry) catch {
+    e => {
+      println("error: \{e.message()}")
+      return
+    }
+  }
+  @fs.write_binary(out, data) catch {
+    e => {
+      println("error: cannot write \{out}: \{e}")
+      return
+    }
+  }
+  let hint = if intact {
+    "clusters still free — data likely intact"
+  } else {
+    "WARNING: clusters reallocated — data may be overwritten"
+  }
+  println("recovered \{data.length()} bytes to \{out} (\{hint})")
 }

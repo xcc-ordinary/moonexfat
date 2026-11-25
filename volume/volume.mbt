@@ -178,11 +178,29 @@ pub fn Volume::resolve(
   self : Volume,
   path : String,
 ) -> @entries.FileEntry raise VolumeError {
+  self.resolve_path(path, deleted=false)
+}
+
+///|
+/// Like `resolve`, but searches deleted entry sets (for recovery).
+pub fn Volume::resolve_deleted(
+  self : Volume,
+  path : String,
+) -> @entries.FileEntry raise VolumeError {
+  self.resolve_path(path, deleted=true)
+}
+
+///|
+fn Volume::resolve_path(
+  self : Volume,
+  path : String,
+  deleted~ : Bool,
+) -> @entries.FileEntry raise VolumeError {
   let parts = split_path(path)
   guard parts.length() > 0 else {
     raise PathNotFound(path)
   }
-  let mut listing = self.list_root()
+  let mut listing = self.entries_of(None, deleted)
   for idx in 0..<parts.length() {
     let seg = parts[idx]
     let target = self.upcase.upcase_string(seg)
@@ -200,9 +218,91 @@ pub fn Volume::resolve(
     if idx == parts.length() - 1 {
       return e
     }
-    listing = self.list_dir_entry(e)
+    listing = self.entries_of(Some(e), deleted)
   }
   raise PathNotFound(path)
+}
+
+///|
+/// Entry sets of a directory (None = root), live or deleted.
+fn Volume::entries_of(
+  self : Volume,
+  dir : @entries.FileEntry?,
+  deleted : Bool,
+) -> Array[@entries.FileEntry] raise VolumeError {
+  let data = match dir {
+    None => self.root_dir
+    Some(e) => {
+      guard e.is_dir() else {
+        raise NotADirectory(e.name)
+      }
+      if deleted {
+        self.read_contiguous(e)
+      } else {
+        self.read_entry_data(e)
+      }
+    }
+  }
+  let listing = if deleted {
+    @entries.list_deleted(data, Some(self.upcase)) catch {
+      e => raise DirFailed(e.message())
+    }
+  } else {
+    @entries.list_dir(data, Some(self.upcase)) catch {
+      e => raise DirFailed(e.message())
+    }
+  }
+  listing
+}
+
+///|
+/// List deleted entry sets in the root directory.
+pub fn Volume::list_deleted_root(self : Volume) -> Array[@entries.FileEntry] raise VolumeError {
+  self.entries_of(None, true)
+}
+
+///|
+/// List deleted entry sets inside a (possibly deleted) directory.
+pub fn Volume::list_deleted_dir(
+  self : Volume,
+  entry : @entries.FileEntry,
+) -> Array[@entries.FileEntry] raise VolumeError {
+  self.entries_of(Some(entry), true)
+}
+
+///|
+/// Best-effort recovery of a deleted file: read its former clusters
+/// contiguously. Deletion zeroes FAT chains, so the chain is unusable;
+/// data survives until those clusters are reallocated and overwritten.
+pub fn Volume::recover(
+  self : Volume,
+  entry : @entries.FileEntry,
+) -> Bytes raise VolumeError {
+  self.read_contiguous(entry)
+}
+
+///|
+/// Whether a deleted file's former clusters are all still free in the
+/// allocation bitmap — a strong hint that its data has not been reused.
+pub fn Volume::deleted_intact(self : Volume, entry : @entries.FileEntry) -> Bool {
+  let csize = self.boot.cluster_size()
+  if entry.data_length <= 0L {
+    return true
+  }
+  let n = ((entry.data_length + csize.to_int64() - 1L) / csize.to_int64()).to_int()
+  for k in 0..<n {
+    let c = entry.first_cluster.to_int() + k
+    if c < 2 || c > self.boot.cluster_count.reinterpret_as_int() + 1 {
+      return false
+    }
+    let allocated = self.bitmap.is_allocated(c.reinterpret_as_uint()) catch {
+      _ => return false
+    }
+    if allocated {
+      return false
+    }
+  }
+  true
 }
 
 ///|
@@ -227,24 +327,13 @@ fn Volume::read_entry_data(
   if dl == 0L {
     return Bytes::make(0, b'\x00')
   }
-  let csize = self.boot.cluster_size()
-  let nclusters = ((dl + csize.to_int64() - 1L) / csize.to_int64()).to_int()
-  let size64 = self.boot.sector_size().to_int64()
-  let heap64 = self.boot.cluster_heap_offset.to_int64() * size64
   if entry.no_fat_chain {
-    let last = entry.first_cluster.to_int64() + (nclusters - 1).to_int64()
-    guard entry.first_cluster >= 2U &&
-          last <= self.boot.cluster_count.to_int64() + 1L else {
-      raise DataLengthInvalid(dl)
-    }
-    let start = heap64 +
-      (entry.first_cluster.to_int64() - 2L) *
-      self.boot.sectors_per_cluster().to_int64() * size64
-    guard start + dl <= self.image.length().to_int64() else {
-      raise ImageTooSmall("file data beyond end of image")
-    }
-    @util.slice(self.image, start.to_int(), dl.to_int())
+    self.read_contiguous(entry)
   } else {
+    let csize = self.boot.cluster_size()
+    let nclusters = ((dl + csize.to_int64() - 1L) / csize.to_int64()).to_int()
+    let size64 = self.boot.sector_size().to_int64()
+    let heap64 = self.boot.cluster_heap_offset.to_int64() * size64
     let chain = self.fat.chain(entry.first_cluster) catch {
       e => raise FatFailed(e.message())
     }
@@ -259,6 +348,38 @@ fn Volume::read_entry_data(
       self.image.at(off.to_int())
     })
   }
+}
+
+///|
+/// Read `ceil(DataLength / cluster_size)` consecutive clusters starting
+/// at FirstCluster, truncated to DataLength.
+fn Volume::read_contiguous(
+  self : Volume,
+  entry : @entries.FileEntry,
+) -> Bytes raise VolumeError {
+  let dl = entry.data_length
+  guard dl >= 0L else {
+    raise DataLengthInvalid(dl)
+  }
+  if dl == 0L {
+    return Bytes::make(0, b'\x00')
+  }
+  let csize = self.boot.cluster_size()
+  let nclusters = ((dl + csize.to_int64() - 1L) / csize.to_int64()).to_int()
+  let size64 = self.boot.sector_size().to_int64()
+  let heap64 = self.boot.cluster_heap_offset.to_int64() * size64
+  let last = entry.first_cluster.to_int64() + (nclusters - 1).to_int64()
+  guard entry.first_cluster >= 2U &&
+        last <= self.boot.cluster_count.to_int64() + 1L else {
+    raise DataLengthInvalid(dl)
+  }
+  let start = heap64 +
+    (entry.first_cluster.to_int64() - 2L) *
+    self.boot.sectors_per_cluster().to_int64() * size64
+  guard start + dl <= self.image.length().to_int64() else {
+    raise ImageTooSmall("file data beyond end of image")
+  }
+  @util.slice(self.image, start.to_int(), dl.to_int())
 }
 
 ///|

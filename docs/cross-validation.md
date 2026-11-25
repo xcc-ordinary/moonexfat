@@ -61,6 +61,39 @@ The largest files span hundreds of 4 KiB clusters through real FAT chains,
 so this exercises chain walking, multi-cluster reads and DataLength
 truncation on authentic on-disk layout — not just synthetic fixtures.
 
+## Deleted-file recovery: 18 / 18 recovered & match
+
+The sample's `audio2` / `movie2` / `pic2` / `text2` directories were deleted
+after copying. moonexfat parses the deleted entry sets (InUse bit cleared:
+0x05/0x40/0x41), confirms their former clusters are still free in the
+allocation bitmap, and reads the data contiguously (`recover`). All 18
+deleted files match their upstream originals byte-for-byte:
+
+| File | Bytes | SHA-256 |
+|---|---:|---|
+| audio2/deleted.mp3 | 28970 | d069980970a2a054b5428b46c5acbbdbae6de8c951c83156d067c63029b19e9f |
+| audio2/deleted.ogg | 26282 | b461ebbcc60946b0944689f2cc17b48ea34f922d4c46ae9b29d694c00b0ff6ba |
+| audio2/deleted.wav | 183678 | 24ae095ca72500539599665db3b8beeabda43f57a33883c2a65bf9fb172c6432 |
+| movie2/movie-hello.avi | 2781426 | eac488b5793f5428ea70f064abbf28941b4ede26824aec1808fcb528c64b1587 |
+| movie2/movie-hello.mp4 | 4288306 | 68162af4e15b20fb61261e55de79e989f53d6295f6226b4bda1905b8c40e9676 |
+| movie2/movie-hello.mpeg | 1054720 | 6a7de01a1606c17b819f6548f2c89d30512a8e7528c529141409c51c3bd141a6 |
+| movie2/movie-hello.ogg | 767624 | 20e0b2d1c2c6a8c06fa3c2f165036be5a4cad8b6150bff76966a8e64e2541ea7 |
+| pic2/d-debian.jpg | 159927 | da6ae48fbcde42dcef2d6795bb169da5a62d9d54c98df2a5e33df90e93a62e2f |
+| pic2/d-debian.png | 423494 | d8edcef4a655717afb028db6593a92055dcc90e0e4cbc5bf038545f6ab1818f7 |
+| pic2/d-debian.ppm | 1440061 | 1bf6d6aa183f20d8a55bab110e8a053a4f46e11313cf55f1d46f7687035b0863 |
+| pic2/d-debian.xcf | 479718 | 8a3109d19cf072e2d453574d1978429a2c3922f1bba5ec3e42766f7d24f95fca |
+| pic2/IMG_20191224_234846.jpg | 6266853 | 653193b3238e0c056cc834c8144aa9801419516e751f8682daa425d7f3dacc5c |
+| pic2/IMG_20200124_231153.jpg | 2680169 | 850048a1eb65a2147ea05927976aa927c03926c85f880c2f9d2196380bf10403 |
+| pic2/IMG_20200608_111614.jpg | 4857710 | 1f23a3bd64e685f9364046b1ff05b2953071c18e90b2bfb3f9a1e0d6ad234bf5 |
+| text2/d-text.docx | 4406 | 79bff7bc58cb07f94a0eda820ae2ddafbd42fef7c270288ea46178350ebc2b29 |
+| text2/d-text.odt | 9204 | 2a0b1c8962164a22bb5ffbaaab7eb60e6037e328d3aafb56beb49a2f285b556d |
+| text2/d-text.pdf | 18992 | 8f6144fd20a9e8a977ff8fc3ea8a8ddab287171444e1e0676ea7bf7e7a2355a9 |
+| text2/test.sh | 42 | 924b9ba34acfccbd36da4f3b18f372051467d4a832d74b336f1bffd4d9ea6442 |
+
+Recovery is best-effort by design: once clusters are reallocated and
+overwritten the data is gone; `deleted` reports `intact` vs `reused` from
+the bitmap so the caller knows which case they are in.
+
 ## Two spec bugs this validation caught (and fixed)
 
 1. **Up-case table compression (§7.2.5).** Real formatters emit the

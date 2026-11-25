@@ -147,6 +147,7 @@ pub struct FileEntry {
   valid_data_length : Int64
   no_fat_chain : Bool
   modified : DateTime
+  deleted : Bool
 }
 
 ///|
@@ -184,7 +185,7 @@ pub fn name_hash(name : String, upcase : @upcase.UpcaseTable) -> Int {
 }
 
 ///|
-/// List the file entry sets of a directory. Special metadata entries
+/// List the live file entry sets of a directory. Special metadata entries
 /// (0x81/0x82/0x83) are skipped, deleted sets (0x05) are skipped via
 /// SecondaryCount, and scanning stops at the end marker (0x00).
 /// Each set's SetChecksum (§6.3.3) is verified; when `upcase` is given,
@@ -193,6 +194,42 @@ pub fn list_dir(
   dir : Bytes,
   upcase : @upcase.UpcaseTable?,
 ) -> Array[FileEntry] raise EntriesError {
+  scan(dir, upcase, deleted=false)
+}
+
+///|
+/// List deleted file entry sets (InUse bit cleared: 0x05/0x40/0x41).
+/// Deletion clears the InUse bits without recomputing SetChecksum, so
+/// the stored set checksum is stale by design and is not verified here;
+/// NameHash still covers the unchanged name and is verified.
+pub fn list_deleted(
+  dir : Bytes,
+  upcase : @upcase.UpcaseTable?,
+) -> Array[FileEntry] raise EntriesError {
+  scan(dir, upcase, deleted=true)
+}
+
+///|
+fn scan(
+  dir : Bytes,
+  upcase : @upcase.UpcaseTable?,
+  deleted~ : Bool,
+) -> Array[FileEntry] raise EntriesError {
+  let file_type = if deleted {
+    0x05
+  } else {
+    0x85
+  }
+  let stream_type = if deleted {
+    0x40
+  } else {
+    0xC0
+  }
+  let name_type = if deleted {
+    0x41
+  } else {
+    0xC1
+  }
   let out : Array[FileEntry] = []
   let mut i = 0
   while i + 32 <= dir.length() {
@@ -200,7 +237,7 @@ pub fn list_dir(
     if t == 0 {
       break
     }
-    if t == 0x85 {
+    if t == file_type {
       let sc = dir.at(i + 1).to_int()
       guard sc >= 2 && sc <= 18 else {
         raise BadSecondaryCount(sc)
@@ -209,21 +246,22 @@ pub fn list_dir(
       guard i + total <= dir.length() else {
         raise TruncatedSet(i)
       }
-      // SetChecksum (§7.4.1.2): 16-bit rotate-right-1 accumulate over
-      // the whole set, excluding the 2-byte SetChecksum field itself.
-      let mut sum = 0
-      for k in 0..<total {
-        if k == 2 || k == 3 {
-          continue
+      if !deleted {
+        // SetChecksum (§7.4.1.2): 16-bit rotate-right-1 accumulate over
+        // the whole set, excluding the 2-byte SetChecksum field itself.
+        let mut sum = 0
+        for k in 0..<total {
+          if k == 2 || k == 3 {
+            continue
+          }
+          sum = (((sum & 1) << 15) + (sum >> 1) + dir.at(i + k).to_int()) & 0xFFFF
         }
-        sum = (((sum & 1) << 15) + (sum >> 1) + dir.at(i + k).to_int()) & 0xFFFF
+        let expected = @util.le_u16(dir, i + 2)
+        guard sum == expected else {
+          raise SetChecksumMismatch(expected, sum)
+        }
       }
-      let expected = @util.le_u16(dir, i + 2)
-      let actual = sum
-      guard actual == expected else {
-        raise SetChecksumMismatch(expected, actual)
-      }
-      guard dir.at(i + 32).to_int() == 0xC0 else {
+      guard dir.at(i + 32).to_int() == stream_type else {
         raise MissingStream(i)
       }
       let flags = dir.at(i + 33).to_int()
@@ -238,7 +276,7 @@ pub fn list_dir(
       let units : Array[Int] = []
       for k in 0..<(sc - 1) {
         let base = i + 64 + 32 * k
-        guard dir.at(base).to_int() == 0xC1 else {
+        guard dir.at(base).to_int() == name_type else {
           raise BadFileNameEntry(base)
         }
         for j in 0..<15 {
@@ -281,9 +319,10 @@ pub fn list_dir(
         valid_data_length: vdl,
         no_fat_chain: (flags & 2) != 0,
         modified: decode_timestamp(@util.le_u32(dir, i + 12)),
+        deleted,
       })
       i = i + total
-    } else if t == 0x05 {
+    } else if t == (if deleted { 0x85 } else { 0x05 }) {
       i = i + 32 * (1 + dir.at(i + 1).to_int())
     } else if (t & 0x80) == 0 {
       i = i + 32

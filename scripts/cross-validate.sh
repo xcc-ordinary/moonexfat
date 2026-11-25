@@ -83,4 +83,43 @@ for f in $FILES; do
 done
 
 echo "== $ok matched, $fail failed =="
-[ "$fail" -eq 0 ]
+
+# Deleted-file recovery: directories ending in 2 were deleted after
+# copying; their entry sets and (unreused) data survive in the image.
+DELETED_FILES="
+audio2/deleted.mp3
+audio2/deleted.ogg
+audio2/deleted.wav
+movie2/movie-hello.avi
+movie2/movie-hello.mp4
+movie2/movie-hello.mpeg
+movie2/movie-hello.ogg
+pic2/d-debian.jpg
+pic2/d-debian.png
+pic2/d-debian.ppm
+pic2/d-debian.xcf
+pic2/IMG_20191224_234846.jpg
+pic2/IMG_20200124_231153.jpg
+pic2/IMG_20200608_111614.jpg
+text2/d-text.docx
+text2/d-text.odt
+text2/d-text.pdf
+text2/test.sh
+"
+
+echo "== deleted-file recovery =="
+rok=0; rfail=0
+for f in $DELETED_FILES; do
+  curl -fsSL "$RAW/$f" -o "$WORK/orig"
+  moon run cmd/moonexfat --target wasm -- recover "$WORK/real.exfat" "$f" "$WORK/out" > /dev/null
+  if cmp -s "$WORK/orig" "$WORK/out"; then
+    echo "RECOVERED  $f ($(stat -c%s "$WORK/out") bytes)"
+    rok=$((rok+1))
+  else
+    echo "RECOVERY-MISMATCH  $f"
+    rfail=$((rfail+1))
+  fi
+done
+echo "== $rok recovered & matched, $rfail failed =="
+
+[ "$fail" -eq 0 ] && [ "$rfail" -eq 0 ]

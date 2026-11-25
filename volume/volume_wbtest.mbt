@@ -221,6 +221,20 @@ fn file_set(
 }
 
 ///|
+/// Simulate deletion: clear the InUse bit (0x80) of every entry's type
+/// byte, exactly as the spec's delete operation does. The stored
+/// SetChecksum becomes stale; NameHash remains valid.
+fn deleted_set(set : Bytes) -> Bytes {
+  Bytes::makei(set.length(), fn(i) {
+    if i % 32 == 0 {
+      (set.at(i).to_int() & 0x7F).to_byte()
+    } else {
+      set.at(i)
+    }
+  })
+}
+
+///|
 fn root_bytes() -> Bytes {
   concat([
     meta_entry(0x81, 0U, 3U, 61L),
@@ -229,7 +243,8 @@ fn root_bytes() -> Bytes {
     file_set("HELLO.TXT", 0x20, 0x03, 5U, 27L),
     file_set("DATA.BIN", 0x20, 0x01, 6U, 1200L),
     file_set("SUB", 0x10, 0x03, 9U, 512L),
-    Bytes::make(128, b'\x00'),
+    deleted_set(file_set("GONE.TXT", 0x20, 0x03, 11U, 5L)),
+    Bytes::make(64, b'\x00'),
   ])
 }
 
@@ -285,6 +300,8 @@ fn mini() -> Bytes {
       sub.at(i - 17920)
     } else if i >= 18432 && i < 18432 + nested.length() {
       nested.at(i - 18432)
+    } else if i >= 18944 && i < 18949 {
+      "gone\n"[i - 18944].to_int().to_byte() // deleted GONE.TXT data, cluster 11
     } else {
       b'\x00'
     }
@@ -499,6 +516,44 @@ test "renamed file without rehash is detected" {
     Err(DirFailed(_)) => ()
     _ => assert_true(false)
   }
+}
+
+///|
+test "deleted entry sets are listed separately and recoverable" {
+  let vol = opened()
+  let live = vol.list_root() catch {
+    _ => {
+      assert_true(false)
+      return
+    }
+  }
+  assert_eq(live.length(), 3)
+  let gone = vol.list_deleted_root() catch {
+    e => {
+      println(e.message())
+      assert_true(false)
+      return
+    }
+  }
+  assert_eq(gone.length(), 1)
+  assert_eq(gone[0].name, "GONE.TXT")
+  assert_eq(gone[0].deleted, true)
+  assert_eq(gone[0].first_cluster, 11U)
+  assert_eq(vol.deleted_intact(gone[0]), true)
+  let data = vol.recover(gone[0]) catch {
+    _ => {
+      assert_true(false)
+      return
+    }
+  }
+  assert_eq(data, ascii_bytes("gone\n"))
+  let e = vol.resolve_deleted("gone.txt") catch {
+    _ => {
+      assert_true(false)
+      return
+    }
+  }
+  assert_eq(e.name, "GONE.TXT")
 }
 
 ///|

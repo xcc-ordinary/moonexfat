@@ -31,6 +31,15 @@ pub fn VolumeError::message(Self) -> String
 
 // Types and methods
 #derive(Eq, @debug.Debug)
+pub struct VerifyReport {
+  files : Int32
+  dirs : Int32
+  fat_bitmap_mismatches : Int32
+  orphan_clusters : Int32
+  problems : Array[String]
+}
+
+#derive(Eq, @debug.Debug)
 pub struct Volume {
   boot : @boot.BootRegion
   image : Bytes
@@ -41,11 +50,21 @@ pub struct Volume {
   label : String?
 }
 pub fn Volume::cluster_chain(Self, UInt32) -> Array[UInt32] raise VolumeError
+pub fn Volume::cluster_runs(Self, @entries.FileEntry) -> Array[(UInt32, Int32)] raise VolumeError
+pub fn Volume::deleted_intact(Self, @entries.FileEntry) -> Bool
+pub fn Volume::find(Self, String) -> Array[(String, @entries.FileEntry)] raise VolumeError
+pub fn Volume::list_deleted_dir(Self, @entries.FileEntry) -> Array[@entries.FileEntry] raise VolumeError
+pub fn Volume::list_deleted_root(Self) -> Array[@entries.FileEntry] raise VolumeError
 pub fn Volume::list_dir_entry(Self, @entries.FileEntry) -> Array[@entries.FileEntry] raise VolumeError
 pub fn Volume::list_root(Self) -> Array[@entries.FileEntry] raise VolumeError
 pub fn Volume::open(Bytes) -> Self raise VolumeError
+pub fn Volume::open_disk(Bytes) -> Self raise VolumeError
 pub fn Volume::read_file(Self, @entries.FileEntry) -> Bytes raise VolumeError
+pub fn Volume::recover(Self, @entries.FileEntry) -> Bytes raise VolumeError
 pub fn Volume::resolve(Self, String) -> @entries.FileEntry raise VolumeError
+pub fn Volume::resolve_deleted(Self, String) -> @entries.FileEntry raise VolumeError
+pub fn Volume::tree(Self) -> Array[(String, @entries.FileEntry)] raise VolumeError
+pub fn Volume::verify(Self) -> VerifyReport
 
 // Type aliases
 

@@ -43,6 +43,12 @@ jobs:
           moon run cmd/moonexfat --target wasm -- cat testdata/mini.exfat SUB/NESTED.TXT
           moon run cmd/moonexfat --target wasm -- extract testdata/mini.exfat DATA.BIN /tmp/data.bin
           test "$(stat -c%s /tmp/data.bin)" = "1200"
+          moon run cmd/moonexfat --target wasm -- tree testdata/mini.exfat
+          moon run cmd/moonexfat --target wasm -- verify testdata/mini.exfat
+          moon run cmd/moonexfat --target wasm -- stat testdata/mini.exfat HELLO.TXT
+          moon run cmd/moonexfat --target wasm -- map testdata/mini.exfat DATA.BIN
+          moon run cmd/moonexfat --target wasm -- find testdata/mini.exfat nested
+          moon run cmd/moonexfat --target wasm -- deleted testdata/mini.exfat
 
   cross-validate:
     name: Real-image cross-validation

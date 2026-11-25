@@ -1,0 +1,27 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "xcc-ordinary/moonexfat/disk"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn exfat_offset(Bytes) -> Int64?
+
+pub fn gpt_partitions(Bytes) -> Array[Partition]
+
+pub fn mbr_partitions(Bytes) -> Array[Partition]
+
+// Errors
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub struct Partition {
+  start_lba : Int64
+  lba_count : Int64
+  kind : String
+}
+
+// Type aliases
+
+// Traits

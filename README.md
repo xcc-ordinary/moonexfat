@@ -9,7 +9,7 @@ The MoonBit ecosystem already has FAT12/16/32 ([moonfat][moonfat]),
 NTFS + ext4 ([moonfs][moonfs]) and ISO 9660 ([mooniso][mooniso]) parsers —
 **exFAT was the missing member of the family.** moonexfat fills that gap.
 
-## Status (v0.4.0 — weeks 1–4, feature-complete)
+## Status (v0.5.0 — parser complete + forensics toolkit)
 
 - ✅ **Main Boot Sector parsing** with spec-level validation: JumpBoot,
   `EXFAT   ` signature, MustBeZero region, sector/cluster shift ranges,
@@ -44,11 +44,19 @@ NTFS + ext4 ([moonfs][moonfs]) and ISO 9660 ([mooniso][mooniso]) parsers —
 - ✅ **Real-image cross-validation**: 18/18 files extracted from a real
   `mkfs.exfat` image (Debian forensics-samples) match upstream originals
   byte-for-byte — see [docs/cross-validation.md](docs/cross-validation.md).
+- ✅ **Deleted-file recovery**: deleted entry sets + bitmap intactness
+  check; **18/18 deleted files recovered** from the same real image,
+  including a 6.3 MB JPEG across ~1500 clusters.
+- ✅ **Disk containers**: MBR/GPT partition auto-detection — CLI accepts
+  full disk images directly.
+- ✅ **Forensics CLI**: `stat` (attributes, timestamps, UTC offsets),
+  `verify` (FAT/bitmap consistency, orphan clusters), `tree`, `find`,
+  `map` (fragmentation / cluster runs).
 - ✅ **Fuzzing**: 300 deterministic mutations (byte flips, targeted
   metadata corruption, truncations), zero panics.
 - ✅ **Benchmarks**: `moon bench` suite (open ≈ 23 µs, list ≈ 3 µs,
   chained 1200 B read ≈ 7 µs on wasm).
-- ✅ 67 tests green on `wasm` and `wasm-gc`; checksum tests assert
+- ✅ 82 tests green on `wasm` and `wasm-gc`; checksum tests assert
   **independently computed vectors** (`0x829BD81D`, `0x46987370`,
   `0x88E38EE3`, set checksum `0x357E`, name hashes `0x3046` / `0x6A4A`),
   not self-consistent ones.
@@ -57,13 +65,22 @@ NTFS + ext4 ([moonfs][moonfs]) and ISO 9660 ([mooniso][mooniso]) parsers —
 
 ```sh
 moon update
-moon test --target wasm          # 67 tests
+moon test --target wasm          # 82 tests
 moon run cmd/moonexfat --target wasm -- inspect testdata/mini.exfat
 moon run cmd/moonexfat --target wasm -- chain testdata/mini.exfat 6
 moon run cmd/moonexfat --target wasm -- ls testdata/mini.exfat
 moon run cmd/moonexfat --target wasm -- cat testdata/mini.exfat SUB/NESTED.TXT
 moon run cmd/moonexfat --target wasm -- extract testdata/mini.exfat DATA.BIN out.bin
+moon run cmd/moonexfat --target wasm -- tree testdata/mini.exfat
+moon run cmd/moonexfat --target wasm -- verify testdata/mini.exfat
+moon run cmd/moonexfat --target wasm -- stat testdata/mini.exfat HELLO.TXT
+moon run cmd/moonexfat --target wasm -- map testdata/mini.exfat DATA.BIN
+moon run cmd/moonexfat --target wasm -- find testdata/mini.exfat nested
+moon run cmd/moonexfat --target wasm -- deleted disk.img
+moon run cmd/moonexfat --target wasm -- recover disk.img pic2/IMG_20191224_234846.jpg out.jpg
 ```
+
+All commands accept raw volumes **and** full disk images (MBR/GPT).
 
 `ls` output:
 
@@ -116,7 +133,7 @@ Read-only parsing only; no formatting, no writing, no block-device access.
 
 ## Verification
 
-- `moon test --target wasm` / `--target wasm-gc` — 67 tests incl. fuzzing.
+- `moon test --target wasm` / `--target wasm-gc` — 82 tests incl. fuzzing.
 - `moon bench --target wasm` — micro-benchmarks.
 - `bash scripts/cross-validate.sh` — downloads a public real exFAT image
   (Debian forensics-samples, MIT) and compares every extracted file with

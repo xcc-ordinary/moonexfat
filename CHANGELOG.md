@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.0 (2026-11-25)
+
+Forensics-grade extensions on top of the complete parser.
+
+- `disk`: MBR/GPT partition auto-detection — every CLI command now accepts
+  full disk images, not just raw volumes (candidates confirmed by boot
+  signature; works with 0x07, 0x0C and 0x83 partition types).
+- **Deleted-file recovery**: deleted entry sets (0x05/0x40/0x41) parsed
+  with NameHash verification; bitmap-based intactness check; `deleted`
+  and `recover` CLI. Validated on the real sample: **18/18 deleted files
+  recovered byte-for-byte** (incl. a 6.3 MB JPEG), hashes in
+  `docs/cross-validation.md`.
+- `stat`: full metadata — decoded attributes, create/modify/access
+  timestamps with 10 ms increments and UTC-offset decoding (§7.4.9).
+- `verify`: whole-volume consistency checker — FAT vs allocation bitmap
+  cross-check (NoFatChain-aware), orphan-cluster detection, full
+  directory-tree walk with per-set checksum verification.
+- `tree`: recursive directory listing; `find`: case-insensitive name
+  search via the volume's up-case table.
+- `map`: cluster-run (extent) layout and fragmentation report.
+- 82 tests (wasm + wasm-gc), 0 warnings; CI smoke covers all 12 commands.
+
 ## 0.4.0 (2026-11-25)
 
 Week 4 — real-image cross-validation, fuzzing, benchmarks.

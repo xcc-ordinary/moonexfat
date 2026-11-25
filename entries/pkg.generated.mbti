@@ -7,9 +7,15 @@ import {
 }
 
 // Values
+pub fn attribute_string(Int32) -> String
+
 pub fn decode_timestamp(UInt32) -> DateTime
 
+pub fn decode_utc_offset(Int32) -> Int32?
+
 pub fn find_special(Bytes, Int32) -> SpecialEntry?
+
+pub fn list_deleted(Bytes, @upcase.UpcaseTable?) -> Array[FileEntry] raise EntriesError
 
 pub fn list_dir(Bytes, @upcase.UpcaseTable?) -> Array[FileEntry] raise EntriesError
 
@@ -50,6 +56,12 @@ pub struct FileEntry {
   valid_data_length : Int64
   no_fat_chain : Bool
   modified : DateTime
+  deleted : Bool
+  created : DateTime
+  accessed : DateTime
+  create_10ms : Int32
+  modified_10ms : Int32
+  utc_offset_minutes : Int32?
 }
 pub fn FileEntry::is_dir(Self) -> Bool
 

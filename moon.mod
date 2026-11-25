@@ -1,6 +1,6 @@
 name = "xcc-ordinary/moonexfat"
 
-version = "0.4.0"
+version = "0.5.0"
 
 repository = "https://github.com/xcc-ordinary/moonexfat"
 
@@ -8,6 +8,6 @@ license = "MIT"
 
 keywords = [ "exfat", "filesystem", "disk-image", "parser", "wasm" ]
 
-description = "Pure-MoonBit exFAT filesystem image parser: boot region validation, FAT chains, bitmap, up-case table, directory entry sets, path resolution and file reading — built from the Microsoft exFAT specification."
+description = "Pure-MoonBit exFAT image parser and forensics toolkit: spec-level validation, FAT chains, directory entry sets, path resolution, file reading, deleted-file recovery, consistency checking, MBR/GPT auto-detection."
 
 readme = "README.md"

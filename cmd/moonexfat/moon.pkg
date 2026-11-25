@@ -5,6 +5,8 @@ import {
   "moonbitlang/core/async/fs",
   "xcc-ordinary/moonexfat/boot",
   "xcc-ordinary/moonexfat/volume",
+  "xcc-ordinary/moonexfat/disk",
+  "xcc-ordinary/moonexfat/util",
 }
 
 pkgtype(kind: "executable")

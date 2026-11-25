@@ -6,6 +6,7 @@ import {
   "xcc-ordinary/moonexfat/bitmap",
   "xcc-ordinary/moonexfat/upcase",
   "xcc-ordinary/moonexfat/entries",
+  "xcc-ordinary/moonexfat/disk",
 }
 
 import {

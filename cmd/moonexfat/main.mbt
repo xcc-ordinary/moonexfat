@@ -71,7 +71,23 @@ async fn read_image(path : String) -> Bytes? {
       return None
     }
   }
-  Some(b)
+  Some(carve_exfat(b))
+}
+
+///|
+/// Accept both raw volumes and full disk images (MBR/GPT): slice out the
+/// exFAT partition when one is detected.
+fn carve_exfat(image : Bytes) -> Bytes {
+  match @disk.exfat_offset(image) {
+    Some(off) =>
+      if off == 0L {
+        image
+      } else {
+        let o = off.to_int()
+        @util.slice(image, o, image.length() - o)
+      }
+    None => image
+  }
 }
 
 ///|

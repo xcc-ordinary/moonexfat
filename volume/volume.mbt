@@ -104,6 +104,20 @@ pub fn Volume::open(image : Bytes) -> Volume raise VolumeError {
 }
 
 ///|
+/// Open an exFAT volume from a full disk image: raw volume, MBR disk or
+/// GPT disk. The partition offset is auto-detected via the boot signature.
+pub fn Volume::open_disk(image : Bytes) -> Volume raise VolumeError {
+  match @disk.exfat_offset(image) {
+    Some(off) => {
+      let o = off.to_int()
+      Volume::open(@util.slice(image, o, image.length() - o))
+    }
+    None =>
+      raise BootFailed("no exFAT volume found (checked offset 0, MBR and GPT partitions)")
+  }
+}
+
+///|
 /// The cluster chain of `start`, for inspection and W3 file reading.
 pub fn Volume::cluster_chain(
   self : Volume,

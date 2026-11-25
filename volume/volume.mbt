@@ -291,7 +291,7 @@ pub fn Volume::deleted_intact(self : Volume, entry : @entries.FileEntry) -> Bool
   }
   let n = ((entry.data_length + csize.to_int64() - 1L) / csize.to_int64()).to_int()
   for k in 0..<n {
-    let c = entry.first_cluster.to_int() + k
+    let c = entry.first_cluster.reinterpret_as_int() + k
     if c < 2 || c > self.boot.cluster_count.reinterpret_as_int() + 1 {
       return false
     }

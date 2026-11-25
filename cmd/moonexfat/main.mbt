@@ -59,6 +59,12 @@ fn main {
       } else {
         println("stat: need an image file path and a file path inside it")
       }
+    "verify" =>
+      if args.length() >= 3 {
+        verify_cli(args[2])
+      } else {
+        println("verify: need an image file path")
+      }
     _ => print_usage()
   }
 }
@@ -85,6 +91,8 @@ fn print_usage() -> Unit {
   println("      Best-effort recovery of a deleted file's former clusters.")
   println("  moonexfat stat IMAGE PATH")
   println("      Full metadata: attributes, timestamps, UTC offset, clusters.")
+  println("  moonexfat verify IMAGE")
+  println("      Whole-volume consistency: FAT vs bitmap, orphan clusters.")
 }
 
 ///|
@@ -329,6 +337,30 @@ async fn extract_cli(path : String, file_path : String, out : String) -> Unit {
     }
   }
   println("extracted \{data.length()} bytes to \{out}")
+}
+
+///|
+async fn verify_cli(path : String) -> Unit {
+  let vol = match open_volume(path) {
+    Some(v) => v
+    None => return
+  }
+  let r = vol.verify()
+  println("files checked      : \{r.files}")
+  println("directories checked: \{r.dirs}")
+  println("FAT/bitmap mismatches: \{r.fat_bitmap_mismatches}")
+  println("orphan clusters    : \{r.orphan_clusters}")
+  if r.problems.length() > 0 {
+    println("problems:")
+    for p in r.problems {
+      println("  - \{p}")
+    }
+  }
+  if r.problems.length() == 0 && r.fat_bitmap_mismatches == 0 && r.orphan_clusters == 0 {
+    println("volume consistent")
+  } else {
+    println("volume has inconsistencies")
+  }
 }
 
 ///|

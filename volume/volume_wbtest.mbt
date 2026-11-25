@@ -630,3 +630,51 @@ test "stat timestamps and UTC offset from entry bytes" {
   }
   assert_eq(plain.utc_offset_minutes, None)
 }
+
+///|
+test "verify reports a consistent mini volume" {
+  let r = opened().verify()
+  assert_eq(r.files, 3)
+  assert_eq(r.dirs, 1)
+  assert_eq(r.fat_bitmap_mismatches, 0)
+  assert_eq(r.orphan_clusters, 0)
+  assert_eq(r.problems.length(), 0)
+}
+
+///|
+test "verify detects bitmap/FAT disagreement and orphan clusters" {
+  // Cluster 20: bitmap-only allocation -> orphan. Cluster 21: FAT says
+  // end-of-chain but bitmap says free -> true inconsistency.
+  let img0 = set_byte(mini(), 14850, b'\x04')
+  let img = Bytes::makei(img0.length(), fn(i) {
+    if i >= 12288 + 21 * 4 && i < 12288 + 22 * 4 {
+      b'\xFF'
+    } else {
+      img0.at(i)
+    }
+  })
+  let vol = Volume::open(img) catch {
+    _ => {
+      assert_true(false)
+      return
+    }
+  }
+  let r = vol.verify()
+  assert_true(r.fat_bitmap_mismatches >= 1)
+  assert_true(r.orphan_clusters >= 1)
+}
+
+///|
+test "verify detects a broken FAT chain" {
+  // Zero FAT[7]: DATA.BIN's chain 6 -> 7 -> 8 breaks at 7.
+  let img = set_byte(mini(), 12288 + 7 * 4, b'\x00')
+  let vol = Volume::open(img) catch {
+    _ => {
+      assert_true(false)
+      return
+    }
+  }
+  let r = vol.verify()
+  assert_true(r.problems.length() >= 1)
+  assert_true(r.orphan_clusters >= 1) // cluster 8 now unreachable
+}

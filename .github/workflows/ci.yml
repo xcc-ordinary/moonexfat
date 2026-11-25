@@ -38,4 +38,8 @@ jobs:
         run: |
           moon run cmd/moonexfat --target wasm -- inspect testdata/synthetic.exfat
           moon run cmd/moonexfat --target wasm -- inspect testdata/mini.exfat
-          moon run cmd/moonexfat --target wasm -- chain testdata/mini.exfat 2
+          moon run cmd/moonexfat --target wasm -- chain testdata/mini.exfat 6
+          moon run cmd/moonexfat --target wasm -- ls testdata/mini.exfat
+          moon run cmd/moonexfat --target wasm -- cat testdata/mini.exfat SUB/NESTED.TXT
+          moon run cmd/moonexfat --target wasm -- extract testdata/mini.exfat DATA.BIN /tmp/data.bin
+          test "$(stat -c%s /tmp/data.bin)" = "1200"

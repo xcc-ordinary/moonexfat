@@ -13,6 +13,9 @@ pub suberror VolumeError {
   BitmapFailed(String)
   UpcaseFailed(String)
   DataLengthInvalid(Int64)
+  DirFailed(String)
+  PathNotFound(String)
+  NotADirectory(String)
 }
 
 ///|
@@ -26,6 +29,9 @@ pub fn VolumeError::message(self : VolumeError) -> String {
     BitmapFailed(m) => "allocation bitmap: \{m}"
     UpcaseFailed(m) => "up-case table: \{m}"
     DataLengthInvalid(n) => "metadata DataLength \{n} exceeds its cluster chain"
+    DirFailed(m) => "directory: \{m}"
+    PathNotFound(p) => "path not found: \{p}"
+    NotADirectory(p) => "not a directory: \{p}"
   }
 }
 
@@ -104,6 +110,141 @@ pub fn Volume::cluster_chain(
   start : UInt,
 ) -> Array[UInt] raise VolumeError {
   self.fat.chain(start) catch { e => raise FatFailed(e.message()) }
+}
+
+// ---- W3: directory listing, path resolution, file reading ----
+
+///|
+/// List the root directory's file entry sets.
+pub fn Volume::list_root(self : Volume) -> Array[@entries.FileEntry] raise VolumeError {
+  @entries.list_dir(self.root_dir, Some(self.upcase)) catch {
+    e => raise DirFailed(e.message())
+  }
+}
+
+///|
+/// List the contents of a directory entry.
+pub fn Volume::list_dir_entry(
+  self : Volume,
+  entry : @entries.FileEntry,
+) -> Array[@entries.FileEntry] raise VolumeError {
+  guard entry.is_dir() else {
+    raise NotADirectory(entry.name)
+  }
+  let data = self.read_entry_data(entry)
+  @entries.list_dir(data, Some(self.upcase)) catch {
+    e => raise DirFailed(e.message())
+  }
+}
+
+///|
+fn split_path(path : String) -> Array[String] {
+  let out : Array[String] = []
+  let mut cur = ""
+  for c in path.iter() {
+    if c == '/' || c == '\\' {
+      if cur != "" {
+        out.push(cur)
+        cur = ""
+      }
+    } else {
+      cur = cur + "\{c}"
+    }
+  }
+  if cur != "" {
+    out.push(cur)
+  }
+  out
+}
+
+///|
+/// Resolve a '/'-separated path case-insensitively (via the volume's
+/// up-case table) and return its file entry.
+pub fn Volume::resolve(
+  self : Volume,
+  path : String,
+) -> @entries.FileEntry raise VolumeError {
+  let parts = split_path(path)
+  guard parts.length() > 0 else {
+    raise PathNotFound(path)
+  }
+  let mut listing = self.list_root()
+  for idx in 0..<parts.length() {
+    let seg = parts[idx]
+    let target = self.upcase.upcase_string(seg)
+    let mut hit : @entries.FileEntry? = None
+    for e in listing {
+      if self.upcase.upcase_string(e.name) == target {
+        hit = Some(e)
+        break
+      }
+    }
+    let e = match hit {
+      Some(e) => e
+      None => raise PathNotFound(path)
+    }
+    if idx == parts.length() - 1 {
+      return e
+    }
+    listing = self.list_dir_entry(e)
+  }
+  raise PathNotFound(path)
+}
+
+///|
+/// Read a file's data: contiguous clusters when NoFatChain is set,
+/// otherwise the FAT chain; truncated to DataLength.
+pub fn Volume::read_file(
+  self : Volume,
+  entry : @entries.FileEntry,
+) -> Bytes raise VolumeError {
+  self.read_entry_data(entry)
+}
+
+///|
+fn Volume::read_entry_data(
+  self : Volume,
+  entry : @entries.FileEntry,
+) -> Bytes raise VolumeError {
+  let dl = entry.data_length
+  guard dl >= 0L else {
+    raise DataLengthInvalid(dl)
+  }
+  if dl == 0L {
+    return Bytes::make(0, b'\x00')
+  }
+  let csize = self.boot.cluster_size()
+  let nclusters = ((dl + csize.to_int64() - 1L) / csize.to_int64()).to_int()
+  let size64 = self.boot.sector_size().to_int64()
+  let heap64 = self.boot.cluster_heap_offset.to_int64() * size64
+  if entry.no_fat_chain {
+    let last = entry.first_cluster.to_int64() + (nclusters - 1).to_int64()
+    guard entry.first_cluster >= 2U &&
+          last <= self.boot.cluster_count.to_int64() + 1L else {
+      raise DataLengthInvalid(dl)
+    }
+    let start = heap64 +
+      (entry.first_cluster.to_int64() - 2L) *
+      self.boot.sectors_per_cluster().to_int64() * size64
+    guard start + dl <= self.image.length().to_int64() else {
+      raise ImageTooSmall("file data beyond end of image")
+    }
+    @util.slice(self.image, start.to_int(), dl.to_int())
+  } else {
+    let chain = self.fat.chain(entry.first_cluster) catch {
+      e => raise FatFailed(e.message())
+    }
+    guard chain.length() >= nclusters else {
+      raise DataLengthInvalid(dl)
+    }
+    Bytes::makei(dl.to_int(), fn(i) {
+      let cluster = chain[i / csize].to_int64()
+      let off = heap64 +
+        (cluster - 2L) * self.boot.sectors_per_cluster().to_int64() * size64 +
+        (i % csize).to_int64()
+      self.image.at(off.to_int())
+    })
+  }
 }
 
 ///|

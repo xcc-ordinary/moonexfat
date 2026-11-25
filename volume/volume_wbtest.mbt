@@ -1,7 +1,10 @@
 // Volume integration tests on an in-memory mini exFAT volume that mirrors
 // testdata/mini.exfat byte for byte. Independent vectors (PowerShell):
-//   boot checksum        = 0x46987370
+//   boot checksum         = 0x46987370
 //   up-case TableChecksum = 0x88E38EE3
+//   HELLO.TXT SetChecksum = 0xEF86
+//   NameHash("HELLO.TXT") = 0x3046
+//   NameHash("NESTED.TXT")= 0x6A4A
 
 ///|
 fn boot_byte(i : Int) -> Byte {
@@ -17,17 +20,14 @@ fn boot_byte(i : Int) -> Byte {
     8 => b' '
     9 => b' '
     10 => b' '
-    // VolumeLength = 512 = 0x200
-    73 => b'\x02'
+    73 => b'\x02' // VolumeLength = 512
     80 => b'\x18' // FatOffset = 24
     84 => b'\x04' // FatLength = 4
     88 => b'\x1C' // ClusterHeapOffset = 28
-    // ClusterCount = 484 = 0x1E4
-    92 => b'\xE4'
+    92 => b'\xE4' // ClusterCount = 484
     93 => b'\x01'
     96 => b'\x02' // root cluster = 2
-    // serial 0x20261125
-    100 => b'\x25'
+    100 => b'\x25' // serial 0x20261125
     101 => b'\x11'
     102 => b'\x26'
     103 => b'\x20'
@@ -36,14 +36,13 @@ fn boot_byte(i : Int) -> Byte {
     109 => b'\x00' // 1 sector per cluster
     110 => b'\x01' // 1 FAT
     111 => b'\x80'
-    112 => b'\x01' // PercentInUse = 1
+    112 => b'\x02' // PercentInUse = 2 (excluded from boot checksum)
     _ =>
       if i < 4608 && i % 512 == 510 {
         b'\x55'
       } else if i < 4608 && i % 512 == 511 {
         b'\xAA'
       } else if i >= 5632 {
-        // boot checksum 0x46987370 LE repeated
         match (i - 5632) % 4 {
           0 => b'\x70'
           1 => b'\x73'
@@ -57,62 +56,231 @@ fn boot_byte(i : Int) -> Byte {
 }
 
 ///|
+fn upcase_byte(j : Int) -> Byte {
+  if j % 2 == 0 {
+    let u = j / 2
+    let v = if u >= 97 && u <= 122 { u - 32 } else { u }
+    v.to_byte()
+  } else {
+    b'\x00'
+  }
+}
+
+///|
+fn healthy_upcase() -> @upcase.UpcaseTable {
+  let table = Bytes::makei(256, upcase_byte)
+  @upcase.UpcaseTable::parse(table, 0x88E38EE3U) catch {
+    _ => abort("upcase setup failed")
+  }
+}
+
+///|
+fn concat(parts : Array[Bytes]) -> Bytes {
+  let total = parts.fold(init=0, fn(acc, p) { acc + p.length() })
+  Bytes::makei(total, fn(i) {
+    let mut off = 0
+    for p in parts {
+      if i < off + p.length() {
+        return p.at(i - off)
+      }
+      off = off + p.length()
+    }
+    b'\x00'
+  })
+}
+
+///|
+fn meta_entry(t : Int, checksum : UInt, cluster : UInt, len : Int64) -> Bytes {
+  Bytes::makei(32, fn(i) {
+    match i {
+      0 => t.to_byte()
+      _ =>
+        if i >= 4 && i < 8 {
+          ((checksum >> ((i - 4) * 8)) & 0xFFU).to_byte()
+        } else if i >= 20 && i < 24 {
+          ((cluster >> ((i - 20) * 8)) & 0xFFU).to_byte()
+        } else if i >= 24 {
+          ((len >> ((i - 24) * 8)) & 0xFFL).to_int().to_byte()
+        } else {
+          b'\x00'
+        }
+    }
+  })
+}
+
+///|
+fn label_entry() -> Bytes {
+  Bytes::makei(32, fn(i) {
+    match i {
+      0 => b'\x83'
+      1 => b'\x04'
+      2 => b'T'
+      4 => b'E'
+      6 => b'S'
+      8 => b'T'
+      _ => b'\x00'
+    }
+  })
+}
+
+///|
+/// Build a file directory entry set: File (0x85) + Stream (0xC0) +
+/// File Name (0xC1) entries, with NameHash and SetChecksum.
+fn file_set(
+  name : String,
+  attrs : Int,
+  flags : Int,
+  cluster : UInt,
+  len : Int64,
+) -> Bytes {
+  let chars = name.to_array()
+  let nlen = chars.length()
+  let fn_count = (nlen + 14) / 15
+  let sc = 1 + fn_count
+  let total = 32 * (1 + sc)
+  let ts : UInt = 0x5D796000U // 2026-11-25 12:00:00
+  let hash = @entries.name_hash(name, healthy_upcase())
+  let base = Bytes::makei(total, fn(i) {
+    let rel = i % 32
+    let which = i / 32
+    if which == 0 {
+      match rel {
+        0 => b'\x85'
+        1 => sc.to_byte()
+        4 => (attrs & 0xFF).to_byte()
+        _ =>
+          if rel >= 8 && rel < 12 {
+            ((ts >> ((rel - 8) * 8)) & 0xFFU).to_byte()
+          } else if rel >= 12 && rel < 16 {
+            ((ts >> ((rel - 12) * 8)) & 0xFFU).to_byte()
+          } else if rel >= 16 && rel < 20 {
+            ((ts >> ((rel - 16) * 8)) & 0xFFU).to_byte()
+          } else {
+            b'\x00'
+          }
+      }
+    } else if which == 1 {
+      match rel {
+        0 => b'\xC0'
+        1 => flags.to_byte()
+        3 => nlen.to_byte()
+        4 => (hash & 0xFF).to_byte()
+        5 => ((hash >> 8) & 0xFF).to_byte()
+        _ =>
+          if rel >= 8 && rel < 16 {
+            ((len >> ((rel - 8) * 8)) & 0xFFL).to_int().to_byte()
+          } else if rel >= 20 && rel < 24 {
+            ((cluster >> ((rel - 20) * 8)) & 0xFFU).to_byte()
+          } else if rel >= 24 {
+            ((len >> ((rel - 24) * 8)) & 0xFFL).to_int().to_byte()
+          } else {
+            b'\x00'
+          }
+      }
+    } else {
+      let k = which - 2
+      if rel == 0 {
+        b'\xC1'
+      } else {
+        let unit_idx = k * 15 + (rel - 2) / 2
+        if rel >= 2 && unit_idx < nlen {
+          let u = chars[unit_idx].to_int()
+          if rel % 2 == 0 {
+            (u & 0xFF).to_byte()
+          } else {
+            ((u >> 8) & 0xFF).to_byte()
+          }
+        } else {
+          b'\x00'
+        }
+      }
+    }
+  })
+  let mut sum : UInt = 0U
+  for i in 0..<total {
+    if i == 2 || i == 3 {
+      continue
+    }
+    let carry = if (sum & 1U) == 1U { 0x80000000U } else { 0U }
+    sum = carry + (sum >> 1) + base.at(i).to_uint()
+  }
+  let cs = sum & 0xFFFFU
+  Bytes::makei(total, fn(i) {
+    if i == 2 {
+      (cs & 0xFFU).to_byte()
+    } else if i == 3 {
+      ((cs >> 8) & 0xFFU).to_byte()
+    } else {
+      base.at(i)
+    }
+  })
+}
+
+///|
+fn root_bytes() -> Bytes {
+  concat([
+    meta_entry(0x81, 0U, 3U, 61L),
+    meta_entry(0x82, 0x88E38EE3U, 4U, 256L),
+    label_entry(),
+    file_set("HELLO.TXT", 0x20, 0x03, 5U, 27L),
+    file_set("DATA.BIN", 0x20, 0x01, 6U, 1200L),
+    file_set("SUB", 0x10, 0x03, 9U, 512L),
+    Bytes::make(128, b'\x00'),
+  ])
+}
+
+///|
+fn sub_bytes() -> Bytes {
+  concat([
+    file_set("NESTED.TXT", 0x20, 0x03, 10U, 18L),
+    Bytes::make(416, b'\x00'),
+  ])
+}
+
+///|
+fn fat_byte(j : Int) -> Byte {
+  match j {
+    0 => b'\xF8'
+    24 => b'\x07' // cluster 6 -> 7
+    28 => b'\x08' // cluster 7 -> 8
+    _ =>
+      if (j >= 1 && j < 24) || (j >= 32 && j < 44) {
+        b'\xFF'
+      } else {
+        b'\x00'
+      }
+  }
+}
+
+///|
 fn mini() -> Bytes {
+  let root = root_bytes()
+  let sub = sub_bytes()
+  let hello = @utf8.encode("Hello, exFAT from MoonBit!\n")
+  let nested = @utf8.encode("nested file works\n")
   Bytes::makei(262144, fn(i) {
     if i < 6144 {
       boot_byte(i)
     } else if i < 12288 {
-      boot_byte(i - 6144) // backup boot region
-    } else if i >= 12288 && i < 12308 {
-      // FAT: entry0 = media descriptor, entries 1..4 = EOC
-      let j = i - 12288
-      if j == 0 { b'\xF8' } else { b'\xFF' }
-    } else if i == 14336 {
-      b'\x81' // allocation bitmap entry
-    } else if i == 14356 {
-      b'\x03' // bitmap FirstCluster = 3
-    } else if i == 14360 {
-      b'\x3D' // bitmap DataLength = 61
-    } else if i == 14368 {
-      b'\x82' // up-case table entry
-    } else if i >= 14372 && i < 14376 {
-      // TableChecksum 0x88E38EE3 LE
-      match i - 14372 {
-        0 => b'\xE3'
-        1 => b'\x8E'
-        2 => b'\xE3'
-        _ => b'\x88'
-      }
-    } else if i == 14388 {
-      b'\x04' // up-case FirstCluster = 4
-    } else if i == 14392 {
-      b'\x00' // DataLength = 256 (low byte)
-    } else if i == 14393 {
-      b'\x01'
-    } else if i == 14400 {
-      b'\x83' // volume label
-    } else if i == 14401 {
-      b'\x04'
-    } else if i == 14402 {
-      b'T'
-    } else if i == 14404 {
-      b'E'
-    } else if i == 14406 {
-      b'S'
-    } else if i == 14408 {
-      b'T'
+      boot_byte(i - 6144)
+    } else if i >= 12288 && i < 12332 {
+      fat_byte(i - 12288)
+    } else if i >= 14336 && i < 14848 {
+      root.at(i - 14336)
     } else if i == 14848 {
-      b'\x07' // bitmap: clusters 2,3,4 allocated
+      b'\xFF' // bitmap: clusters 2..10 allocated
+    } else if i == 14849 {
+      b'\x01'
     } else if i >= 15360 && i < 15616 {
-      // up-case table: ASCII mapping, u16 LE
-      let j = i - 15360
-      if j % 2 == 0 {
-        let u = j / 2
-        let v = if u >= 97 && u <= 122 { u - 32 } else { u }
-        v.to_byte()
-      } else {
-        b'\x00'
-      }
+      upcase_byte(i - 15360)
+    } else if i >= 15872 && i < 15872 + hello.length() {
+      hello.at(i - 15872)
+    } else if i >= 16384 && i < 17584 {
+      ((i - 16384) % 251).to_byte() // DATA.BIN content across clusters 6-8
+    } else if i >= 17920 && i < 18432 {
+      sub.at(i - 17920)
+    } else if i >= 18432 && i < 18432 + nested.length() {
+      nested.at(i - 18432)
     } else {
       b'\x00'
     }
@@ -146,7 +314,28 @@ fn alloc_r(vol : Volume, c : UInt) -> Result[Bool, @bitmap.BitmapError] {
 }
 
 ///|
+#warnings("-result_error_return")
+fn list_root_r(vol : Volume) -> Result[Array[@entries.FileEntry], VolumeError] {
+  let v = vol.list_root() catch { e => return Err(e) }
+  Ok(v)
+}
+
+///|
+#warnings("-result_error_return")
+fn resolve_r(vol : Volume, p : String) -> Result[@entries.FileEntry, VolumeError] {
+  let v = vol.resolve(p) catch { e => return Err(e) }
+  Ok(v)
+}
+
+///|
+fn opened() -> Volume {
+  Volume::open(mini()) catch { e => abort("open failed: " + e.message()) }
+}
+
+///|
 test "mini volume boot checksum matches independent vector" {
+  // PercentInUse changed from 1 to 2 in W3; the checksum is unchanged
+  // because the spec excludes that mutable field.
   let sum = @boot.boot_checksum(mini(), 512) catch {
     _ => {
       assert_true(false)
@@ -157,22 +346,155 @@ test "mini volume boot checksum matches independent vector" {
 }
 
 ///|
+test "HELLO.TXT set checksum matches independent vector 0xEF86" {
+  assert_eq(@util.le_u16(root_bytes(), 96 + 2), 0xEF86)
+}
+
+///|
+test "name hash matches independent vectors" {
+  let uc = healthy_upcase()
+  assert_eq(@entries.name_hash("HELLO.TXT", uc), 0x3046)
+  assert_eq(@entries.name_hash("NESTED.TXT", uc), 0x6A4A)
+}
+
+///|
 test "open mini volume end to end" {
-  let vol = Volume::open(mini()) catch {
+  let vol = opened()
+  assert_eq(vol.boot.cluster_count, 484U)
+  assert_eq(vol.boot.percent_in_use, 2)
+  assert_eq(vol.label, Some("TEST"))
+  assert_eq(vol.bitmap.allocated_count(), 9)
+  assert_eq(vol.upcase.length(), 128)
+  assert_eq(chain_r(vol, 2U), Ok([2U]))
+  assert_eq(alloc_r(vol, 2U), Ok(true))
+  assert_eq(alloc_r(vol, 11U), Ok(false))
+}
+
+///|
+test "list root directory" {
+  let vol = opened()
+  let listing = vol.list_root() catch {
     e => {
       println(e.message())
       assert_true(false)
       return
     }
   }
-  assert_eq(vol.boot.cluster_count, 484U)
-  assert_eq(vol.label, Some("TEST"))
-  assert_eq(vol.bitmap.allocated_count(), 3)
-  assert_eq(vol.upcase.length(), 128)
-  assert_eq(vol.upcase.upcase_string("mini"), "MINI")
-  assert_eq(chain_r(vol, 2U), Ok([2U]))
-  assert_eq(alloc_r(vol, 2U), Ok(true))
-  assert_eq(alloc_r(vol, 5U), Ok(false))
+  assert_eq(listing.length(), 3)
+  assert_eq(listing[0].name, "HELLO.TXT")
+  assert_eq(listing[0].data_length, 27L)
+  assert_eq(listing[0].no_fat_chain, true)
+  assert_eq(listing[0].is_dir(), false)
+  assert_eq(listing[1].name, "DATA.BIN")
+  assert_eq(listing[1].no_fat_chain, false)
+  assert_eq(listing[2].name, "SUB")
+  assert_eq(listing[2].is_dir(), true)
+  let m = listing[0].modified
+  assert_eq(m.year, 2026)
+  assert_eq(m.month, 11)
+  assert_eq(m.day, 25)
+  assert_eq(m.hour, 12)
+  assert_eq(m.minute, 0)
+  assert_eq(m.second, 0)
+}
+
+///|
+test "read single-cluster file via NoFatChain" {
+  let vol = opened()
+  let e = vol.resolve("HELLO.TXT") catch {
+    _ => {
+      assert_true(false)
+      return
+    }
+  }
+  let data = vol.read_file(e) catch {
+    _ => {
+      assert_true(false)
+      return
+    }
+  }
+  assert_eq(data, @utf8.encode("Hello, exFAT from MoonBit!\n"))
+}
+
+///|
+test "read multi-cluster file via FAT chain" {
+  let vol = opened()
+  assert_eq(chain_r(vol, 6U), Ok([6U, 7U, 8U]))
+  let e = vol.resolve("DATA.BIN") catch {
+    _ => {
+      assert_true(false)
+      return
+    }
+  }
+  let data = vol.read_file(e) catch {
+    _ => {
+      assert_true(false)
+      return
+    }
+  }
+  assert_eq(data.length(), 1200)
+  for i in 0..<1200 {
+    assert_eq(data.at(i).to_int(), i % 251)
+  }
+}
+
+///|
+test "case-insensitive path resolution into subdirectory" {
+  let vol = opened()
+  let e = vol.resolve("sub/nested.txt") catch {
+    _ => {
+      assert_true(false)
+      return
+    }
+  }
+  assert_eq(e.name, "NESTED.TXT")
+  let data = vol.read_file(e) catch {
+    _ => {
+      assert_true(false)
+      return
+    }
+  }
+  assert_eq(data, @utf8.encode("nested file works\n"))
+}
+
+///|
+test "path errors are structured" {
+  let vol = opened()
+  assert_eq(resolve_r(vol, "NOPE"), Err(PathNotFound("NOPE")))
+  assert_eq(resolve_r(vol, "HELLO.TXT/x"), Err(NotADirectory("HELLO.TXT")))
+  assert_eq(resolve_r(vol, "/"), Err(PathNotFound("/")))
+}
+
+///|
+test "corrupted file set checksum is detected on listing" {
+  // Byte 40 of the HELLO.TXT set lives in the root cluster (14336+96+40).
+  let img = set_byte(mini(), 14336 + 96 + 40, b'\xFF')
+  let vol = Volume::open(img) catch {
+    _ => {
+      assert_true(false)
+      return
+    }
+  }
+  match list_root_r(vol) {
+    Err(DirFailed(_)) => ()
+    _ => assert_true(false)
+  }
+}
+
+///|
+test "renamed file without rehash is detected" {
+  // 'H' of HELLO.TXT -> 'J' (first filename unit, low byte).
+  let img = set_byte(mini(), 14336 + 96 + 64 + 2, b'J')
+  let vol = Volume::open(img) catch {
+    _ => {
+      assert_true(false)
+      return
+    }
+  }
+  match list_root_r(vol) {
+    Err(DirFailed(_)) => ()
+    _ => assert_true(false)
+  }
 }
 
 ///|

@@ -1,4 +1,5 @@
 import {
   "moonbitlang/core/builtin",
   "xcc-ordinary/moonexfat/util",
+  "xcc-ordinary/moonexfat/upcase",
 }

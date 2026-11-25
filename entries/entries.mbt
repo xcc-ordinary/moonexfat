@@ -77,3 +77,222 @@ pub fn volume_label(dir : Bytes) -> String? {
     None => None
   }
 }
+
+// ---- W3: file directory entry sets (spec §6.3, §7.4, §7.5) ----
+
+///|
+#derive(Debug, Eq)
+pub suberror EntriesError {
+  TruncatedSet(Int)
+  BadSecondaryCount(Int)
+  SetChecksumMismatch(Int, Int)
+  MissingStream(Int)
+  BadFileNameEntry(Int)
+  NameLengthInvalid(Int)
+  NameHashMismatch(Int, Int)
+}
+
+///|
+pub fn EntriesError::message(self : EntriesError) -> String {
+  match self {
+    TruncatedSet(i) => "directory entry set at \{i} is truncated"
+    BadSecondaryCount(n) => "file entry SecondaryCount \{n} out of range 2..18"
+    SetChecksumMismatch(expected, actual) =>
+      "entry set checksum mismatch: expected 0x\{expected.to_string(radix=16)}, found 0x\{actual.to_string(radix=16)}"
+    MissingStream(i) => "file entry at \{i} lacks a Stream Extension (0xC0)"
+    BadFileNameEntry(i) => "expected File Name entry (0xC1) at \{i}"
+    NameLengthInvalid(n) => "NameLength \{n} does not fit the file name entries"
+    NameHashMismatch(expected, actual) =>
+      "name hash mismatch: expected 0x\{expected.to_string(radix=16)}, found 0x\{actual.to_string(radix=16)}"
+  }
+}
+
+///|
+/// Decoded exFAT timestamp (local time fields; UTC offset not applied).
+#derive(Debug, Eq)
+pub struct DateTime {
+  year : Int
+  month : Int
+  day : Int
+  hour : Int
+  minute : Int
+  second : Int
+}
+
+///|
+/// Decode the packed 32-bit exFAT timestamp (spec §7.4.7):
+/// year-1980 (7 bits), month (4), day (5), hour (5), minute (6),
+/// double-second (5).
+pub fn decode_timestamp(raw : UInt) -> DateTime {
+  let v = raw.reinterpret_as_int()
+  {
+    year: 1980 + (v >> 25),
+    month: (v >> 21) & 0xF,
+    day: (v >> 16) & 0x1F,
+    hour: (v >> 11) & 0x1F,
+    minute: (v >> 5) & 0x3F,
+    second: (v & 0x1F) * 2,
+  }
+}
+
+///|
+/// One parsed file directory entry set: File (0x85) + Stream Extension
+/// (0xC0) + 1..17 File Name (0xC1) entries.
+#derive(Debug, Eq)
+pub struct FileEntry {
+  name : String
+  attributes : Int
+  first_cluster : UInt
+  data_length : Int64
+  valid_data_length : Int64
+  no_fat_chain : Bool
+  modified : DateTime
+}
+
+///|
+pub fn FileEntry::is_dir(self : FileEntry) -> Bool {
+  (self.attributes & 0x10) != 0
+}
+
+///|
+fn hash_step(h : Int, byte : Int) -> Int {
+  (((h << 15) | (h >> 1)) + byte) & 0xFFFF
+}
+
+///|
+/// NameHash (spec §7.4.2): rotate-right-1 accumulate over the UTF-16LE
+/// bytes of the up-cased name, modulo 2^16.
+pub fn name_hash(name : String, upcase : @upcase.UpcaseTable) -> Int {
+  let up = upcase.upcase_string(name)
+  let mut h = 0
+  for c in up.iter() {
+    let u = c.to_int()
+    if u > 0xFFFF {
+      let v = u - 0x10000
+      let hi = 0xD800 + (v >> 10)
+      let lo = 0xDC00 + (v & 0x3FF)
+      h = hash_step(h, hi & 0xFF)
+      h = hash_step(h, hi >> 8)
+      h = hash_step(h, lo & 0xFF)
+      h = hash_step(h, lo >> 8)
+    } else {
+      h = hash_step(h, u & 0xFF)
+      h = hash_step(h, (u >> 8) & 0xFF)
+    }
+  }
+  h
+}
+
+///|
+/// List the file entry sets of a directory. Special metadata entries
+/// (0x81/0x82/0x83) are skipped, deleted sets (0x05) are skipped via
+/// SecondaryCount, and scanning stops at the end marker (0x00).
+/// Each set's SetChecksum (§6.3.3) is verified; when `upcase` is given,
+/// the NameHash is verified too.
+pub fn list_dir(
+  dir : Bytes,
+  upcase : @upcase.UpcaseTable?,
+) -> Array[FileEntry] raise EntriesError {
+  let out : Array[FileEntry] = []
+  let mut i = 0
+  while i + 32 <= dir.length() {
+    let t = dir.at(i).to_int()
+    if t == 0 {
+      break
+    }
+    if t == 0x85 {
+      let sc = dir.at(i + 1).to_int()
+      guard sc >= 2 && sc <= 18 else {
+        raise BadSecondaryCount(sc)
+      }
+      let total = 32 * (1 + sc)
+      guard i + total <= dir.length() else {
+        raise TruncatedSet(i)
+      }
+      // SetChecksum: rotate-right sum over the whole set, excluding the
+      // 2-byte SetChecksum field itself; stored as the low 16 bits.
+      let mut sum : UInt = 0U
+      for k in 0..<total {
+        if k == 2 || k == 3 {
+          continue
+        }
+        let carry = if (sum & 1U) == 1U { 0x80000000U } else { 0U }
+        sum = carry + (sum >> 1) + dir.at(i + k).to_uint()
+      }
+      let expected = @util.le_u16(dir, i + 2)
+      let actual = (sum & 0xFFFFU).reinterpret_as_int()
+      guard actual == expected else {
+        raise SetChecksumMismatch(expected, actual)
+      }
+      guard dir.at(i + 32).to_int() == 0xC0 else {
+        raise MissingStream(i)
+      }
+      let flags = dir.at(i + 33).to_int()
+      let name_len = dir.at(i + 35).to_int()
+      let stored_hash = @util.le_u16(dir, i + 36)
+      let vdl = @util.le_u64(dir, i + 40)
+      let fc = @util.le_u32(dir, i + 52)
+      let dl = @util.le_u64(dir, i + 56)
+      guard name_len >= 1 && name_len <= 15 * (sc - 1) else {
+        raise NameLengthInvalid(name_len)
+      }
+      let units : Array[Int] = []
+      for k in 0..<(sc - 1) {
+        let base = i + 64 + 32 * k
+        guard dir.at(base).to_int() == 0xC1 else {
+          raise BadFileNameEntry(base)
+        }
+        for j in 0..<15 {
+          if units.length() < name_len {
+            units.push(@util.le_u16(dir, base + 2 + 2 * j))
+          }
+        }
+      }
+      let chars : Array[Char] = []
+      let mut k = 0
+      while k < units.length() {
+        let u = units[k]
+        if u >= 0xD800 && u <= 0xDBFF && k + 1 < units.length() &&
+              units[k + 1] >= 0xDC00 && units[k + 1] <= 0xDFFF {
+          let cp = 0x10000 + ((u - 0xD800) << 10) + (units[k + 1] - 0xDC00)
+          chars.push(cp.unsafe_to_char())
+          k = k + 2
+        } else {
+          if u < 0xD800 || u > 0xDFFF {
+            chars.push(u.unsafe_to_char())
+          }
+          k = k + 1
+        }
+      }
+      let name = String::from_array(chars)
+      match upcase {
+        Some(uc) => {
+          let h = name_hash(name, uc)
+          guard h == stored_hash else {
+            raise NameHashMismatch(stored_hash, h)
+          }
+        }
+        None => ()
+      }
+      out.push({
+        name,
+        attributes: @util.le_u16(dir, i + 4),
+        first_cluster: fc,
+        data_length: dl,
+        valid_data_length: vdl,
+        no_fat_chain: (flags & 2) != 0,
+        modified: decode_timestamp(@util.le_u32(dir, i + 12)),
+      })
+      i = i + total
+    } else if t == 0x05 {
+      i = i + 32 * (1 + dir.at(i + 1).to_int())
+    } else if (t & 0x80) == 0 {
+      i = i + 32
+    } else if t >= 0xA0 && t <= 0xBF {
+      i = i + 32 * (1 + dir.at(i + 1).to_int())
+    } else {
+      i = i + 32
+    }
+  }
+  out
+}

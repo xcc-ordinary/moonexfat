@@ -1,6 +1,7 @@
 import {
   "moonbitlang/core/env",
   "moonbitlang/core/string",
+  "moonbitlang/core/encoding/utf8",
   "moonbitlang/core/async/fs",
   "xcc-ordinary/moonexfat/boot",
   "xcc-ordinary/moonexfat/volume",

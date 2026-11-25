@@ -23,6 +23,24 @@ fn main {
       } else {
         println("chain: need an image file path and a cluster number")
       }
+    "ls" =>
+      if args.length() >= 3 {
+        ls_cli(args[2], if args.length() >= 4 { args[3] } else { "/" })
+      } else {
+        println("ls: need an image file path")
+      }
+    "cat" =>
+      if args.length() >= 4 {
+        cat_cli(args[2], args[3])
+      } else {
+        println("cat: need an image file path and a file path inside it")
+      }
+    "extract" =>
+      if args.length() >= 5 {
+        extract_cli(args[2], args[3], args[4])
+      } else {
+        println("extract: need IMAGE PATH_IN_IMAGE OUTPUT_FILE")
+      }
     _ => print_usage()
   }
 }
@@ -37,6 +55,12 @@ fn print_usage() -> Unit {
   println("      directory, allocation bitmap, up-case table); print geometry.")
   println("  moonexfat chain IMAGE CLUSTER")
   println("      Walk and print the FAT cluster chain starting at CLUSTER.")
+  println("  moonexfat ls IMAGE [DIR]")
+  println("      List a directory (default: root).")
+  println("  moonexfat cat IMAGE PATH")
+  println("      Print a file's content as UTF-8 text.")
+  println("  moonexfat extract IMAGE PATH OUTPUT")
+  println("      Extract a file from the image to OUTPUT.")
 }
 
 ///|
@@ -142,4 +166,127 @@ fn show_chain(chain : Array[UInt]) -> String {
     parts.push("\{c}")
   }
   parts.join(" -> ") + " -> EOC"
+}
+
+///|
+async fn open_volume(path : String) -> @volume.Volume? {
+  let image = match read_image(path) {
+    Some(b) => b
+    None => return None
+  }
+  let vol = @volume.Volume::open(image) catch {
+    e => {
+      println("error: \{e.message()}")
+      return None
+    }
+  }
+  Some(vol)
+}
+
+///|
+fn two(n : Int) -> String {
+  if n < 10 {
+    "0\{n}"
+  } else {
+    "\{n}"
+  }
+}
+
+///|
+async fn ls_cli(path : String, dir_path : String) -> Unit {
+  let vol = match open_volume(path) {
+    Some(v) => v
+    None => return
+  }
+  let listing = if dir_path == "/" || dir_path == "" {
+    vol.list_root() catch {
+      e => {
+        println("error: \{e.message()}")
+        return
+      }
+    }
+  } else {
+    let entry = vol.resolve(dir_path) catch {
+      e => {
+        println("error: \{e.message()}")
+        return
+      }
+    }
+    vol.list_dir_entry(entry) catch {
+      e => {
+        println("error: \{e.message()}")
+        return
+      }
+    }
+  }
+  println("TYPE   SIZE       MODIFIED          NAME")
+  for e in listing {
+    let kind = if e.is_dir() { "<DIR>" } else { "     " }
+    let m = e.modified
+    let date = "\{m.year}-\{two(m.month)}-\{two(m.day)} \{two(m.hour)}:\{two(m.minute)}"
+    println("\{kind}  \{e.data_length}  \{date}  \{e.name}")
+  }
+  println("\{listing.length()} entries")
+}
+
+///|
+async fn cat_cli(path : String, file_path : String) -> Unit {
+  let vol = match open_volume(path) {
+    Some(v) => v
+    None => return
+  }
+  let entry = vol.resolve(file_path) catch {
+    e => {
+      println("error: \{e.message()}")
+      return
+    }
+  }
+  guard !entry.is_dir() else {
+    println("error: \{file_path} is a directory")
+    return
+  }
+  let data = vol.read_file(entry) catch {
+    e => {
+      println("error: \{e.message()}")
+      return
+    }
+  }
+  let text = @utf8.decode(data) catch {
+    _ => {
+      println("error: \{file_path} is not valid UTF-8 (\{data.length()} bytes); use extract")
+      return
+    }
+  }
+  println(text)
+}
+
+///|
+async fn extract_cli(path : String, file_path : String, out : String) -> Unit {
+  let vol = match open_volume(path) {
+    Some(v) => v
+    None => return
+  }
+  let entry = vol.resolve(file_path) catch {
+    e => {
+      println("error: \{e.message()}")
+      return
+    }
+  }
+  guard !entry.is_dir() else {
+    println("error: \{file_path} is a directory")
+    return
+  }
+  let data = vol.read_file(entry) catch {
+    e => {
+      println("error: \{e.message()}")
+      return
+    }
+  }
+  @fs.write_binary(out, data) catch {
+    e => {
+      println("error: cannot write \{out}: \{e}")
+      return
+    }
+  }
+  println("extracted \{data.length()} bytes to \{out}")
 }

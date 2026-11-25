@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.0 (2026-11-25)
+
+Week 3 — directory entry sets, path resolution and file reading.
+
+- `entries`: file directory entry set parsing (File 0x85 + Stream Extension
+  0xC0 + File Name 0xC1), SetChecksum (§6.3.3) and NameHash (§7.4.2)
+  verification, deleted-set skipping, UTF-16 names with surrogate pairs,
+  timestamp decoding; 7 new structured error variants.
+- `volume`: `list_root` / `list_dir_entry`, case-insensitive `resolve`
+  through subdirectories, `read_file` with contiguous (`NoFatChain`) and
+  FAT-chain reads truncated to DataLength.
+- CLI: new `ls`, `cat` (UTF-8) and `extract` subcommands.
+- `testdata/mini.exfat` extended with real files: HELLO.TXT (single cluster,
+  NoFatChain), DATA.BIN (1200 bytes across a 3-cluster FAT chain) and
+  SUB/NESTED.TXT.
+- 61 tests (wasm + wasm-gc); new independent vectors: HELLO.TXT SetChecksum
+  0xEF86, NameHash 0x3046 / 0x6A4A. The mini boot checksum stays 0x46987370
+  after PercentInUse changes — the spec's mutable-field exclusion in action.
+
 ## 0.2.0 (2026-11-25)
 
 Week 2 — space management and volume metadata.

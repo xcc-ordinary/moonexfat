@@ -1,5 +1,6 @@
 import {
   "moonbitlang/core/builtin",
+  "moonbitlang/core/encoding/utf8",
   "xcc-ordinary/moonexfat/util",
   "xcc-ordinary/moonexfat/boot",
   "xcc-ordinary/moonexfat/fat",

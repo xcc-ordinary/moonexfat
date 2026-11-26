@@ -61,7 +61,37 @@ NTFS + ext4 ([moonfs][moonfs]) and ISO 9660 ([mooniso][mooniso]) parsers —
   `0x88E38EE3`, set checksum `0x357E`, name hashes `0x3046` / `0x6A4A`),
   not self-consistent ones.
 
-## Quick start
+## Install
+
+As a library (requires MoonBit toolchain, moonc ≥ 0.10.16):
+
+```sh
+moon add xcc-ordinary/moonexfat
+```
+
+```moonbit
+// moon.pkg
+import {
+  "xcc-ordinary/moonexfat/volume",
+}
+```
+
+```moonbit
+let vol = @volume.Volume::open_disk(image_bytes)   // raw volume or MBR/GPT disk
+let entries = vol.list_root()
+let entry = vol.resolve("photos/img_0001.jpg")     // case-insensitive
+let data = vol.read_file(entry)
+let report = vol.verify()                          // FAT/bitmap consistency
+```
+
+A complete runnable sample lives in [`examples/basic`](examples/basic):
+
+```sh
+moon run examples/basic --target wasm              # uses testdata/mini.exfat
+moon run examples/basic --target wasm -- your.exfat
+```
+
+## Quick start (CLI)
 
 ```sh
 moon update
@@ -76,11 +106,16 @@ moon run cmd/moonexfat --target wasm -- verify testdata/mini.exfat
 moon run cmd/moonexfat --target wasm -- stat testdata/mini.exfat HELLO.TXT
 moon run cmd/moonexfat --target wasm -- map testdata/mini.exfat DATA.BIN
 moon run cmd/moonexfat --target wasm -- find testdata/mini.exfat nested
-moon run cmd/moonexfat --target wasm -- deleted disk.img
-moon run cmd/moonexfat --target wasm -- recover disk.img pic2/IMG_20191224_234846.jpg out.jpg
+moon run cmd/moonexfat --target wasm -- deleted testdata/mini.exfat
 ```
 
 All commands accept raw volumes **and** full disk images (MBR/GPT).
+On your own disk image, deleted-file recovery looks like:
+
+```sh
+moon run cmd/moonexfat --target wasm -- deleted disk.img
+moon run cmd/moonexfat --target wasm -- recover disk.img pic2/photo.jpg out.jpg
+```
 
 `ls` output:
 
